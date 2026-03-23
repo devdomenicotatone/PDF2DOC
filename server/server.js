@@ -204,7 +204,7 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
     try {
       job.message = '🤖 Gemini AI sta correggendo il testo OCR...';
       console.log(`🤖 Job ${jobId}: avvio correzione Gemini...`);
-      docxBuffer = await gemini.correctDocxWithGemini(docxBuffer);
+      docxBuffer = await gemini.correctDocxWithGemini(docxBuffer, job);
       console.log(`🤖 Job ${jobId}: correzione Gemini completata`);
     } catch (err) {
       // Gemini failure is non-fatal: return the uncorrected DOCX

@@ -274,9 +274,10 @@ function parseGeminiResponse(response) {
  * Execute batches with controlled concurrency.
  * Runs up to PARALLEL_CONCURRENCY batches simultaneously.
  */
-async function processBatchesParallel(batches) {
+async function processBatchesParallel(batches, job) {
   const allCorrections = [];
   const totalBatches = batches.length;
+  let completedBatches = 0;
 
   // Process in waves of PARALLEL_CONCURRENCY
   for (let i = 0; i < batches.length; i += PARALLEL_CONCURRENCY) {
@@ -287,7 +288,9 @@ async function processBatchesParallel(batches) {
       const batchNum = waveStart + waveIdx + 1;
       try {
         console.log(`🤖 Batch ${batchNum}/${totalBatches}: ${batch.paragraphs.length} para, ~${batch.tokens} token, ctx: ${batch.context.length}`);
+        if (job) job.message = `🤖 Gemini: batch ${batchNum}/${totalBatches} (${completedBatches} completati)`;
         const corrections = await correctBatch(batch, batchNum, totalBatches);
+        completedBatches++;
         return { batchNum, batch, corrections };
       } catch (err) {
         console.error(`⚠️ Batch ${batchNum} failed: ${err.message}`);
@@ -309,7 +312,7 @@ async function processBatchesParallel(batches) {
 
 // --- Main Pipeline ---
 
-async function correctParagraphsWithGemini(paragraphs) {
+async function correctParagraphsWithGemini(paragraphs, job) {
   if (!model) throw new Error('Gemini non configurato. Aggiungi GEMINI_API_KEY.');
 
   const textParagraphs = paragraphs
@@ -328,8 +331,10 @@ async function correctParagraphsWithGemini(paragraphs) {
   console.log(`📦 ${batches.length} batch | ${textParagraphs.length} paragrafi | ${sectionCount} sezioni | ~${Math.round(totalChars / 1000)}K chars (~${totalTokens} token)`);
   console.log(`🚀 Concorrenza: ${Math.min(PARALLEL_CONCURRENCY, batches.length)} batch simultanei`);
 
+  if (job) job.message = `🤖 Gemini: ${batches.length} batch da elaborare...`;
+
   // Process in parallel
-  const results = await processBatchesParallel(batches);
+  const results = await processBatchesParallel(batches, job);
 
   // Map corrections back to global paragraph indices
   const globalCorrections = new Map();
@@ -362,37 +367,49 @@ function applyParagraphCorrection(paraXml, correctedText, segments) {
       paraXml.substring(seg.localIndex + seg.fullMatch.length);
   }
 
-  // Proportional distribution across runs
+  // Multiple runs: character-position-based distribution
+  // Maps each run to a slice of the corrected text based on cumulative
+  // character positions from the original text, preserving all spaces.
   const totalOrigLen = segments.reduce((sum, s) => sum + s.text.length, 0);
   if (totalOrigLen === 0) return paraXml;
 
   const distribution = [];
-  let remaining = correctedText;
+  let usedChars = 0;
 
   for (let i = 0; i < segments.length; i++) {
     if (i === segments.length - 1) {
-      distribution.push(remaining);
+      // Last segment gets everything remaining
+      distribution.push(correctedText.substring(usedChars));
     } else {
-      const ratio = segments[i].text.length / totalOrigLen;
-      let targetLen = Math.round(correctedText.length * ratio);
-      let cutPos = Math.max(0, Math.min(targetLen, remaining.length));
+      // Calculate end position based on cumulative ratio
+      const cumulativeOrigEnd = segments.slice(0, i + 1).reduce((s, seg) => s + seg.text.length, 0);
+      const ratio = cumulativeOrigEnd / totalOrigLen;
+      let endPos = Math.round(correctedText.length * ratio);
 
-      // Snap to nearest word boundary (±10 chars)
-      let bestCut = cutPos;
-      for (let d = 0; d <= 10; d++) {
-        if (cutPos + d < remaining.length && remaining[cutPos + d] === ' ') {
-          bestCut = cutPos + d; break;
+      // Snap to nearest word boundary: look for space AFTER endPos (prefer cutting after a space)
+      let bestEnd = endPos;
+      for (let d = 0; d <= 15; d++) {
+        // Look forward first (prefer keeping words whole in current chunk)
+        if (endPos + d < correctedText.length && correctedText[endPos + d] === ' ') {
+          bestEnd = endPos + d + 1; // Include the space in this chunk
+          break;
         }
-        if (cutPos - d >= 0 && remaining[cutPos - d] === ' ') {
-          bestCut = cutPos - d; break;
+        // Then look backward
+        if (endPos - d > usedChars && correctedText[endPos - d] === ' ') {
+          bestEnd = endPos - d + 1; // Include the space in this chunk
+          break;
         }
       }
 
-      distribution.push(remaining.substring(0, bestCut));
-      remaining = remaining.substring(bestCut).replace(/^ /, '');
+      // Clamp
+      bestEnd = Math.max(usedChars, Math.min(bestEnd, correctedText.length));
+
+      distribution.push(correctedText.substring(usedChars, bestEnd));
+      usedChars = bestEnd;
     }
   }
 
+  // Apply distribution backwards to preserve XML positions
   let modifiedXml = paraXml;
   for (let i = segments.length - 1; i >= 0; i--) {
     const seg = segments[i];
@@ -419,7 +436,7 @@ function escapeXml(text) {
 
 // --- Full Pipeline ---
 
-async function correctDocxWithGemini(docxBuffer) {
+async function correctDocxWithGemini(docxBuffer, job) {
   const zip = await JSZip.loadAsync(docxBuffer);
   let docXml = await zip.file('word/document.xml').async('string');
 
@@ -433,7 +450,7 @@ async function correctDocxWithGemini(docxBuffer) {
 
   console.log(`📝 Paragrafi: ${textParas.length}/${paragraphs.length} (heading: ${textParas.filter(p => p.isHeading).length})`);
 
-  const corrections = await correctParagraphsWithGemini(paragraphs);
+  const corrections = await correctParagraphsWithGemini(paragraphs, job);
 
   if (!corrections || corrections.size === 0) {
     console.log('⚠️ Nessuna correzione da Gemini');
