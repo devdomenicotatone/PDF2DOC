@@ -58,6 +58,7 @@
   function init() {
     loadSettings();
     loadStats();
+    loadConversions();
     bindEvents();
   }
 
@@ -366,6 +367,7 @@
     resultSubtitle.textContent = docxName;
 
     updateStats();
+    loadConversions();
 
     // Transition to result
     setTimeout(() => {
@@ -435,6 +437,102 @@
     }
     return { preset };
   }
+
+  // --- Conversions History ---
+
+  async function loadConversions() {
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) return;
+    try {
+      const headers = {};
+      const key = getApiKey();
+      if (key) headers['x-api-key'] = key;
+
+      const resp = await fetch(`${backendUrl}/api/conversions`, { headers });
+      if (!resp.ok) return;
+      const list = await resp.json();
+      renderConversions(list);
+    } catch {}
+  }
+
+  function renderConversions(list) {
+    const section = $('#conversionsSection');
+    const container = $('#conversionsList');
+    if (!list || list.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    container.innerHTML = list.map(c => {
+      const date = new Date(c.createdAt + 'Z');
+      const timeStr = date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      const sizeStr = c.fileSize ? formatFileSize(c.fileSize) : '';
+      const name = c.originalName.replace(/\.pdf$/i, '');
+      return `
+        <div class="conv-item">
+          <div class="conv-item__info">
+            <div class="conv-item__name" title="${c.originalName}">📄 ${name}</div>
+            <div class="conv-item__meta">${timeStr} · ${sizeStr}</div>
+          </div>
+          <div class="conv-item__actions">
+            <button class="conv-item__btn conv-item__btn--reprocess" onclick="window.__reprocess('${c.id}')">♻️ Ri-processa</button>
+            <button class="conv-item__btn conv-item__btn--delete" onclick="window.__deleteConv('${c.id}')">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.__reprocess = async function(convId) {
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) return;
+
+    const margins = getMargins();
+    const useGemini = geminiToggle.checked;
+    const geminiModel = geminiModelSelect.value;
+
+    hideError();
+    progressSection.classList.add('progress-section--visible');
+    resultSection.classList.remove('result-section--visible');
+    setProgress(10, '♻️ Avvio ri-processamento...');
+
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      const key = getApiKey();
+      if (key) headers['x-api-key'] = key;
+
+      const resp = await fetch(`${backendUrl}/api/reprocess/${convId}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ margins, useGemini, geminiModel }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error || 'Errore nel ri-processamento');
+      }
+
+      const { jobId } = await resp.json();
+      setProgress(30, 'Ri-processamento in corso...');
+      await pollConversion(backendUrl, jobId);
+    } catch (err) {
+      showError(err.message);
+      progressSection.classList.remove('progress-section--visible');
+    }
+  };
+
+  window.__deleteConv = async function(convId) {
+    const backendUrl = getBackendUrl();
+    if (!backendUrl) return;
+    try {
+      const headers = {};
+      const key = getApiKey();
+      if (key) headers['x-api-key'] = key;
+
+      await fetch(`${backendUrl}/api/conversions/${convId}`, { method: 'DELETE', headers });
+      loadConversions();
+    } catch {}
+  };
 
   // --- Start ---
   init();

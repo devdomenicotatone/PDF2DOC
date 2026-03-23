@@ -20,3 +20,11 @@ Thumbs.db
 
 # Stats (server-side transaction counter)
 .stats.json
+
+# Storage (DOCX files on disk)
+server/storage/
+
+# Database
+server/*.db
+server/*.db-wal
+server/*.db-shm

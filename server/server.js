@@ -12,6 +12,7 @@ const fs = require('fs');
 const adobe = require('./adobe-service');
 const gemini = require('./gemini-service');
 const { normalizeDocxFontSize, setDocxMargins } = require('./normalize-service');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -81,7 +82,7 @@ function saveStats(stats) {
 
 let stats = loadStats();
 
-// Cleanup old jobs every 30 minutes
+// Cleanup old jobs every 30 minutes + old conversions daily
 setInterval(() => {
   const maxAge = 2 * 60 * 60 * 1000; // 2 hours
   const now = Date.now();
@@ -90,6 +91,9 @@ setInterval(() => {
       jobs.delete(id);
     }
   }
+  // Cleanup old DOCX files from DB (> 7 days)
+  const cleaned = db.cleanupOldConversions();
+  if (cleaned > 0) console.log(`🧹 Pulite ${cleaned} conversioni vecchie`);
 }, 30 * 60 * 1000);
 
 // --- Auth Middleware ---
@@ -230,15 +234,79 @@ app.get('/api/health', (req, res) => {
  * Return conversion stats
  */
 app.get('/api/stats', (req, res) => {
-  stats = loadStats(); // Reload to check month reset
+  stats = loadStats();
   res.json({
-    month: stats.month,
     conversions: stats.conversions,
     transactions: stats.transactions,
-    limit: ADOBE_FREE_LIMIT,
     remaining: Math.max(0, ADOBE_FREE_LIMIT - stats.transactions),
-    geminiEnabled: geminiReady,
+    month: stats.month,
+    limit: ADOBE_FREE_LIMIT,
   });
+});
+
+/**
+ * GET /api/conversions
+ * List recent conversions stored in DB
+ */
+app.get('/api/conversions', requireApiKey, (req, res) => {
+  const list = db.listConversions(20);
+  res.json(list);
+});
+
+/**
+ * POST /api/reprocess/:id
+ * Re-apply font normalization, margins, and/or Gemini on a stored raw DOCX
+ */
+app.post('/api/reprocess/:id', requireApiKey, express.json(), async (req, res) => {
+  try {
+    const conv = db.getConversion(req.params.id);
+    if (!conv) {
+      return res.status(404).json({ error: 'Conversione non trovata.' });
+    }
+
+    const rawBuffer = db.getRawDocxBuffer(req.params.id);
+    if (!rawBuffer) {
+      return res.status(404).json({ error: 'File DOCX grezzo non trovato su disco.' });
+    }
+
+    const { margins, geminiModel, useGemini } = req.body;
+    const jobId = crypto.randomUUID();
+
+    // Create job entry for progress tracking
+    jobs.set(jobId, {
+      status: 'processing',
+      message: 'Ri-processamento in corso...',
+      createdAt: Date.now(),
+      result: null,
+      error: null,
+      fileName: conv.originalName,
+    });
+
+    res.json({ jobId, status: 'processing' });
+
+    // Process in background
+    processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, conv.id).catch((err) => {
+      console.error(`Reprocess ${jobId} failed:`, err.message);
+      const job = jobs.get(jobId);
+      if (job) {
+        job.status = 'failed';
+        job.error = err.message;
+      }
+    });
+
+  } catch (err) {
+    console.error('Reprocess error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/conversions/:id
+ * Delete a stored conversion + file
+ */
+app.delete('/api/conversions/:id', requireApiKey, (req, res) => {
+  db.deleteConversion(req.params.id);
+  res.json({ ok: true });
 });
 
 // --- Background Conversion ---
@@ -265,6 +333,15 @@ async function processConversion(jobId, pdfBuffer, useGemini, margins) {
   // Step 5: Download DOCX
   job.message = 'Download del file convertito...';
   let docxBuffer = await adobe.downloadResult(downloadUri);
+
+  // Step 5.1: Save raw DOCX to disk (for future reprocessing)
+  const convId = jobId;
+  try {
+    db.saveConversion(convId, job.fileName, docxBuffer);
+    console.log(`💾 Job ${jobId}: DOCX grezzo salvato (${(docxBuffer.length / 1024).toFixed(1)} KB)`);
+  } catch (err) {
+    console.error(`⚠️ Job ${jobId}: Salvataggio DB fallito: ${err.message}`);
+  }
 
   // Step 5.5: Normalize font sizes (fix OCR size inconsistencies)
   job.message = '📐 Normalizzazione font-size...';
@@ -298,6 +375,9 @@ async function processConversion(jobId, pdfBuffer, useGemini, margins) {
     }
   }
 
+  // Update DB with processing info
+  db.updateProcessedInfo(convId, margins, gemini.getModelName());
+
   // Done — update stats
   stats = loadStats();
   stats.conversions++;
@@ -312,6 +392,53 @@ async function processConversion(jobId, pdfBuffer, useGemini, margins) {
 
   const mode = useGemini && geminiReady ? 'Adobe+Gemini' : 'Adobe';
   console.log(`✅ Job ${jobId} completato (${mode}): ${job.fileName} [${stats.transactions}/${ADOBE_FREE_LIMIT} transazioni]`);
+}
+
+/**
+ * Re-process a stored raw DOCX with new settings (no Adobe transaction)
+ */
+async function processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, convId) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+
+  let docxBuffer = Buffer.from(rawBuffer);
+
+  // Font normalization
+  job.message = '📐 Normalizzazione font-size...';
+  try {
+    docxBuffer = await normalizeDocxFontSize(docxBuffer);
+  } catch (err) {
+    console.error(`⚠️ Reprocess ${jobId}: Font normalization failed: ${err.message}`);
+  }
+
+  // Margins
+  if (margins) {
+    job.message = '📏 Impostazione margini pagina...';
+    try {
+      docxBuffer = await setDocxMargins(docxBuffer, margins);
+    } catch (err) {
+      console.error(`⚠️ Reprocess ${jobId}: Margin setting failed: ${err.message}`);
+    }
+  }
+
+  // Gemini
+  if (useGemini && geminiReady) {
+    if (geminiModel) gemini.setModel(geminiModel);
+    try {
+      job.message = '🤖 Gemini AI sta correggendo il testo OCR...';
+      docxBuffer = await gemini.correctDocxWithGemini(docxBuffer, job);
+    } catch (err) {
+      console.error(`⚠️ Reprocess ${jobId}: Gemini correction failed: ${err.message}`);
+    }
+  }
+
+  // Update DB
+  db.updateProcessedInfo(convId, margins, gemini.getModelName());
+
+  job.status = 'done';
+  job.message = '♻️ Ri-processamento completato!';
+  job.result = docxBuffer;
+  console.log(`♻️ Reprocess ${jobId} completato: ${job.fileName} (0 transazioni Adobe)`);
 }
 
 // --- Error Handler ---
