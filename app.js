@@ -293,10 +293,31 @@
 
   async function pollConversion(backendUrl, jobId) {
     let pollCount = 0;
+    let networkErrors = 0;
     const poll = async () => {
       pollCount++;
 
-      const res = await fetch(`${backendUrl}/api/status/${jobId}`);
+      let res;
+      try {
+        res = await fetch(`${backendUrl}/api/status/${jobId}`);
+      } catch (e) {
+        // Network error (server down, CORS, etc.)
+        networkErrors++;
+        if (networkErrors > 30) {
+          throw new Error('Impossibile contattare il server. Verifica la connessione.');
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+        return poll();
+      }
+
+      if (res.status === 404) {
+        throw new Error('Job non trovato. Il server potrebbe essersi riavviato. Riprova la conversione.');
+      }
+
+      if (!res.ok) {
+        throw new Error(`Errore server (${res.status}). Riprova.`);
+      }
+
       const data = await res.json();
 
       if (data.status === 'done') {
@@ -315,6 +336,7 @@
       }
 
       // Still processing
+      networkErrors = 0; // reset on success
       const fakeProgress = Math.min(85, 40 + pollCount * 2);
       setProgress(fakeProgress, data.message || 'Elaborazione in corso...');
 
