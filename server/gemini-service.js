@@ -154,38 +154,87 @@ RISPONDI con la lista corretta nello STESSO formato [N], una riga per paragrafo.
 
 /**
  * Apply corrected text to a single paragraph's XML.
- * Replaces text in <w:t> tags while preserving formatting.
- * Strategy: put all corrected text in the first <w:t> tag,
- * clear the rest. This preserves the paragraph's XML structure.
+ * Strategy: distribute corrected text proportionally across existing <w:t> tags
+ * to preserve each run's formatting (font size, bold, italic, etc.)
  */
 function applyParagraphCorrection(paraXml, correctedText, segments) {
   if (segments.length === 0) return paraXml;
 
+  // If only one segment, just replace its text directly
+  if (segments.length === 1) {
+    const seg = segments[0];
+    const escaped = escapeXml(correctedText);
+    let attrs = seg.attrs;
+    if (!attrs.includes('xml:space')) attrs = ' xml:space="preserve"';
+    const newTag = `<w:t${attrs}>${escaped}</w:t>`;
+    return paraXml.substring(0, seg.localIndex) +
+      newTag +
+      paraXml.substring(seg.localIndex + seg.fullMatch.length);
+  }
+
+  // Multiple segments: distribute text proportionally
+  const totalOrigLen = segments.reduce((sum, s) => sum + s.text.length, 0);
+
+  if (totalOrigLen === 0) return paraXml;
+
+  // Calculate how much corrected text each segment should get
+  const distribution = [];
+  let correctedRemaining = correctedText;
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+
+    if (i === segments.length - 1) {
+      // Last segment gets everything remaining
+      distribution.push(correctedRemaining);
+    } else {
+      // Proportional share based on original text length
+      const ratio = seg.text.length / totalOrigLen;
+      let targetLen = Math.round(correctedText.length * ratio);
+
+      // Find nearest word boundary (space) within ±10 chars
+      let cutPos = targetLen;
+      let bestCut = cutPos;
+      let bestDist = Infinity;
+
+      for (let d = 0; d <= 10 && cutPos + d <= correctedRemaining.length; d++) {
+        if (correctedRemaining[cutPos + d] === ' ') {
+          bestCut = cutPos + d;
+          bestDist = d;
+          break;
+        }
+        if (cutPos - d >= 0 && correctedRemaining[cutPos - d] === ' ') {
+          bestCut = cutPos - d;
+          bestDist = d;
+          break;
+        }
+      }
+
+      // If no space found nearby, just cut at the target length
+      if (bestDist === Infinity) bestCut = targetLen;
+
+      // Clamp to valid range
+      bestCut = Math.max(0, Math.min(bestCut, correctedRemaining.length));
+
+      const chunk = correctedRemaining.substring(0, bestCut);
+      distribution.push(chunk);
+      correctedRemaining = correctedRemaining.substring(bestCut);
+
+      // Trim leading space from remaining if we cut at a space
+      if (correctedRemaining.startsWith(' ')) {
+        correctedRemaining = correctedRemaining.substring(1);
+      }
+    }
+  }
+
+  // Apply distribution backwards to preserve positions
   let modifiedXml = paraXml;
 
-  // Work backwards to preserve positions
   for (let i = segments.length - 1; i >= 0; i--) {
     const seg = segments[i];
-    let newText;
-
-    if (i === 0) {
-      // First segment gets all the corrected text
-      newText = correctedText
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    } else {
-      // Other segments are emptied
-      newText = '';
-    }
-
-    // Ensure xml:space="preserve" on the first tag to keep whitespace
+    const newText = escapeXml(distribution[i] || '');
     let attrs = seg.attrs;
-    if (i === 0 && !attrs.includes('xml:space')) {
-      attrs = ' xml:space="preserve"';
-    }
-
+    if (!attrs.includes('xml:space')) attrs = ' xml:space="preserve"';
     const newTag = `<w:t${attrs}>${newText}</w:t>`;
     modifiedXml =
       modifiedXml.substring(0, seg.localIndex) +
@@ -194,6 +243,14 @@ function applyParagraphCorrection(paraXml, correctedText, segments) {
   }
 
   return modifiedXml;
+}
+
+function escapeXml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /**
