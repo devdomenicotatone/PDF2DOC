@@ -333,6 +333,21 @@ body::before {
   color: var(--text-tertiary);
 }
 
+.option-hint {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+  padding: 0 0 var(--space-sm);
+  border-top: 1px solid var(--border-glass);
+  padding-top: var(--space-sm);
+  transition: all var(--transition-normal);
+}
+
+.option-row--hidden,
+.option-hint--hidden {
+  display: none;
+}
+
 /* Toggle Switch */
 .toggle {
   position: relative;

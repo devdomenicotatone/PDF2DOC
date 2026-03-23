@@ -1,4 +1,4 @@
-﻿/* ============================================
+/* ============================================
    PDF2DOC â€” Backend Server (Express.js)
    ============================================ */
 
@@ -87,6 +87,7 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     }
 
     const useOCR = req.body.ocr === 'true';
+    const useGemini = req.body.gemini === 'true';
     const jobId = crypto.randomUUID();
 
     // Create job entry
@@ -103,7 +104,7 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processConversion(jobId, req.file.buffer, useOCR).catch((err) => {
+    processConversion(jobId, req.file.buffer, useOCR, useGemini).catch((err) => {
       console.error(`Job ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -175,7 +176,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // --- Background Conversion ---
-async function processConversion(jobId, pdfBuffer, useOCR) {
+async function processConversion(jobId, pdfBuffer, useOCR, useGemini) {
   const job = jobs.get(jobId);
   if (!job) return;
 
@@ -199,8 +200,8 @@ async function processConversion(jobId, pdfBuffer, useOCR) {
   job.message = 'Download del file convertito...';
   let docxBuffer = await adobe.downloadResult(downloadUri);
 
-  // Step 6: If OCR enabled AND Gemini is configured, correct text with AI
-  if (useOCR && geminiReady) {
+  // Step 6: If Gemini correction is requested AND configured, correct text with AI
+  if (useGemini && geminiReady) {
     try {
       job.message = 'ðŸ¤– Gemini AI sta correggendo il testo OCR...';
       console.log(`ðŸ¤– Job ${jobId}: avvio correzione Gemini...`);
@@ -215,12 +216,12 @@ async function processConversion(jobId, pdfBuffer, useOCR) {
 
   // Done!
   job.status = 'done';
-  job.message = useOCR && geminiReady
+  job.message = useGemini && geminiReady
     ? 'Conversione completata con correzione AI!'
     : 'Conversione completata!';
   job.result = docxBuffer;
 
-  const mode = useOCR && geminiReady ? 'Adobe+Gemini' : 'Adobe';
+  const mode = useGemini && geminiReady ? 'Adobe+Gemini' : 'Adobe';
   console.log(`âœ… Job ${jobId} completato (${mode}): ${job.fileName}`);
 }
 

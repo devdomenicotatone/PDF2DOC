@@ -23,6 +23,9 @@
   const fileSize = $('#fileSize');
   const fileRemove = $('#fileRemove');
   const ocrToggle = $('#ocrToggle');
+  const geminiToggle = $('#geminiToggle');
+  const geminiRow = $('#geminiRow');
+  const geminiHint = $('#geminiHint');
   const convertBtn = $('#convertBtn');
   const progressSection = $('#progressSection');
   const progressBar = $('#progressBar');
@@ -53,6 +56,7 @@
     loadSettings();
     loadStats();
     bindEvents();
+    updateGeminiVisibility();
   }
 
   // --- Settings ---
@@ -65,6 +69,12 @@
 
   function getApiKey() {
     return apiPasswordInput.value.trim() || localStorage.getItem(CONFIG.API_KEY_KEY) || '';
+  }
+
+  function updateGeminiVisibility() {
+    const ocrOn = ocrToggle.checked;
+    geminiRow.classList.toggle('option-row--hidden', !ocrOn);
+    geminiHint.classList.toggle('option-hint--hidden', !ocrOn || !geminiToggle.checked);
   }
 
   function getBackendUrl() {
@@ -191,6 +201,10 @@
       settingsPanel.classList.remove('settings-panel--open');
       showTemporaryButtonText(saveSettings, '✓ Salvato!', 'Salva Impostazioni');
     });
+
+    // OCR toggle → show/hide Gemini
+    ocrToggle.addEventListener('change', updateGeminiVisibility);
+    geminiToggle.addEventListener('change', updateGeminiVisibility);
   }
 
   // --- File Handling ---
@@ -246,6 +260,7 @@
       const formData = new FormData();
       formData.append('pdf', selectedFile);
       formData.append('ocr', useOCR ? 'true' : 'false');
+      formData.append('gemini', (useOCR && geminiToggle.checked) ? 'true' : 'false');
 
       setProgress(20, 'Invio al server di conversione...');
 
