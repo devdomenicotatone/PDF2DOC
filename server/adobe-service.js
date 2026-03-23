@@ -2,7 +2,7 @@
    Adobe PDF Services — API Integration Module
    ============================================ */
 
-const TOKEN_ENDPOINT = 'https://pdf-services.adobe.io/token';
+const TOKEN_ENDPOINT = 'https://ims-na1.adobelogin.com/ims/token/v3';
 const UPLOAD_ENDPOINT = 'https://pdf-services.adobe.io/assets';
 const EXPORT_ENDPOINT = 'https://pdf-services.adobe.io/operation/exportpdf';
 const OCR_ENDPOINT = 'https://pdf-services.adobe.io/operation/ocr';
