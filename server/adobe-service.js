@@ -122,6 +122,7 @@ async function exportPdfToDocx(token, clientId, assetID) {
   const body = {
     assetID: assetID,
     targetFormat: 'docx',
+    ocrLang: 'it-IT',  // Always enable Italian OCR (auto-detects if needed)
   };
 
   const res = await fetch(EXPORT_ENDPOINT, {

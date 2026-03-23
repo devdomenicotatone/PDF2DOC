@@ -86,7 +86,6 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
       return res.status(400).json({ error: 'Nessun file PDF caricato.' });
     }
 
-    const useOCR = req.body.ocr === 'true';
     const useGemini = req.body.gemini === 'true';
     const jobId = crypto.randomUUID();
 
@@ -104,7 +103,7 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processConversion(jobId, req.file.buffer, useOCR, useGemini).catch((err) => {
+    processConversion(jobId, req.file.buffer, useGemini).catch((err) => {
       console.error(`Job ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -176,7 +175,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // --- Background Conversion ---
-async function processConversion(jobId, pdfBuffer, useOCR, useGemini) {
+async function processConversion(jobId, pdfBuffer, useGemini) {
   const job = jobs.get(jobId);
   if (!job) return;
 
