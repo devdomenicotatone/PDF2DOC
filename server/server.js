@@ -178,21 +178,39 @@ async function processConversion(jobId, pdfBuffer, useOCR) {
   job.message = 'Autenticazione con Adobe...';
   const token = await adobe.getAccessToken(CLIENT_ID, CLIENT_SECRET);
 
-  // Step 2: Upload
+  // Step 2: Upload original PDF
   job.message = 'Caricamento PDF su Adobe Cloud...';
-  const { assetID } = await adobe.uploadAsset(token, CLIENT_ID, pdfBuffer);
+  let { assetID } = await adobe.uploadAsset(token, CLIENT_ID, pdfBuffer);
 
-  // Step 3: Start export job
+  // Step 3: If OCR is enabled, run dedicated OCR first (two-step flow)
+  if (useOCR) {
+    job.message = 'Fase 1/2: OCR dedicato in corso...';
+    const ocrJobUrl = await adobe.ocrPdf(token, CLIENT_ID, assetID);
+
+    job.message = 'Adobe sta riconoscendo il testo nel documento...';
+    const ocrDownloadUri = await adobe.pollJob(token, CLIENT_ID, ocrJobUrl);
+
+    // Download the OCR'd PDF (now has embedded text layer)
+    job.message = 'Download PDF con testo riconosciuto...';
+    const ocrPdfBuffer = await adobe.downloadResult(ocrDownloadUri);
+
+    // Re-upload the OCR'd PDF for DOCX conversion
+    job.message = 'Fase 2/2: Preparazione conversione DOCX...';
+    const uploaded = await adobe.uploadAsset(token, CLIENT_ID, ocrPdfBuffer);
+    assetID = uploaded.assetID;
+  }
+
+  // Step 4: Export to DOCX (from OCR'd PDF if OCR was used)
   job.message = useOCR
-    ? 'Conversione con OCR in corso...'
+    ? 'Conversione PDF con testo in DOCX...'
     : 'Conversione in DOCX...';
-  const jobUrl = await adobe.exportPdfToDocx(token, CLIENT_ID, assetID, useOCR);
+  const exportJobUrl = await adobe.exportPdfToDocx(token, CLIENT_ID, assetID);
 
-  // Step 4: Poll until done
-  job.message = 'Adobe AI sta elaborando il documento...';
-  const downloadUri = await adobe.pollJob(token, CLIENT_ID, jobUrl);
+  // Step 5: Poll until done
+  job.message = 'Adobe sta generando il DOCX...';
+  const downloadUri = await adobe.pollJob(token, CLIENT_ID, exportJobUrl);
 
-  // Step 5: Download result
+  // Step 6: Download result
   job.message = 'Download del file convertito...';
   const docxBuffer = await adobe.downloadResult(downloadUri);
 
@@ -201,7 +219,7 @@ async function processConversion(jobId, pdfBuffer, useOCR) {
   job.message = 'Conversione completata!';
   job.result = docxBuffer;
 
-  console.log(`✅ Job ${jobId} completato: ${job.fileName}`);
+  console.log(`✅ Job ${jobId} completato${useOCR ? ' (OCR 2-step)' : ''}: ${job.fileName}`);
 }
 
 // --- Error Handler ---

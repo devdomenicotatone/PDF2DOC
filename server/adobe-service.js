@@ -85,18 +85,44 @@ async function uploadAsset(token, clientId, pdfBuffer, mimeType = 'application/p
 }
 
 /**
+ * Run dedicated OCR on a PDF (produces a new PDF with text layer)
+ * Returns the job polling URL
+ */
+async function ocrPdf(token, clientId, assetID, ocrLang = 'it-IT') {
+  const body = {
+    assetID: assetID,
+    ocrLang: ocrLang,
+    ocrType: 'searchable_image_exact',  // preserves original appearance
+  };
+
+  const res = await fetch(OCR_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'x-api-key': clientId,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Adobe OCR job failed (${res.status}): ${text}`);
+  }
+
+  const location = res.headers.get('location') || res.headers.get('x-request-id');
+  return location;
+}
+
+/**
  * Start Export PDF → DOCX job
  * Returns the job polling URL (Location header)
  */
-async function exportPdfToDocx(token, clientId, assetID, withOCR = false) {
+async function exportPdfToDocx(token, clientId, assetID) {
   const body = {
     assetID: assetID,
     targetFormat: 'docx',
   };
-
-  if (withOCR) {
-    body.ocrLang = 'it-IT'; // Italian OCR
-  }
 
   const res = await fetch(EXPORT_ENDPOINT, {
     method: 'POST',
@@ -190,6 +216,7 @@ async function downloadResult(downloadUri) {
 module.exports = {
   getAccessToken,
   uploadAsset,
+  ocrPdf,
   exportPdfToDocx,
   pollJob,
   downloadResult,
