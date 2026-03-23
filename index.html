@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Converti PDF in DOCX con qualità professionale. OCR integrato per PDF scansionati. Powered by Adobe PDF Services.">
+  <title>PDF2DOC — Conversione PDF Professionale</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header__icon">📄</div>
+      <h1 class="header__title">PDF2DOC</h1>
+      <p class="header__subtitle">Conversione professionale PDF → DOCX</p>
+    </header>
+
+    <!-- Error Banner -->
+    <div id="errorBanner" class="error-banner">
+      <span class="error-banner__icon">⚠️</span>
+      <span class="error-banner__text" id="errorText"></span>
+      <button class="error-banner__close" id="errorClose">✕</button>
+    </div>
+
+    <!-- Upload Card -->
+    <div class="card" id="uploadCard">
+      <div class="dropzone" id="dropzone">
+        <span class="dropzone__icon">☁️</span>
+        <p class="dropzone__text">Trascina qui il tuo PDF</p>
+        <p class="dropzone__hint">oppure tocca per selezionare • max 100 MB</p>
+        <input type="file" id="fileInput" accept=".pdf,application/pdf">
+      </div>
+
+      <!-- File Info (shown after selection) -->
+      <div class="file-info" id="fileInfo">
+        <div class="file-info__icon">📕</div>
+        <div class="file-info__details">
+          <div class="file-info__name" id="fileName"></div>
+          <div class="file-info__size" id="fileSize"></div>
+        </div>
+        <button class="file-info__remove" id="fileRemove" title="Rimuovi">✕</button>
+      </div>
+    </div>
+
+    <!-- Options Card -->
+    <div class="card" id="optionsCard">
+      <div class="option-row">
+        <div class="option-label">
+          <span class="option-label__title">🔍 OCR Automatico</span>
+          <span class="option-label__desc">Riconosce testo da PDF scansionati</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="ocrToggle" checked>
+          <span class="toggle__slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Convert Button -->
+    <button class="btn-convert" id="convertBtn" disabled>
+      Converti in DOCX
+    </button>
+
+    <!-- Progress Section -->
+    <div class="progress-section" id="progressSection">
+      <div class="card">
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-status">
+          <div class="progress-status__spinner"></div>
+          <span id="progressText">Preparazione...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result Section -->
+    <div class="result-section" id="resultSection">
+      <div class="card">
+        <div class="result__checkmark">✅</div>
+        <h2 class="result__title">Conversione completata!</h2>
+        <p class="result__subtitle" id="resultSubtitle">Il tuo file DOCX è pronto</p>
+        <a class="btn-download" id="downloadBtn" href="#" download>
+          ⬇️ Scarica DOCX
+        </a>
+        <button class="btn-new" id="newConversion">
+          🔄 Nuova conversione
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats Footer -->
+    <div class="stats">
+      <div class="stat-chip">
+        <span class="stat-chip__value" id="statConverted">0</span>
+        <span class="stat-chip__label">Convertiti</span>
+      </div>
+      <div class="stat-chip">
+        <span class="stat-chip__value" id="statRemaining">500</span>
+        <span class="stat-chip__label">Rimanenti/mese</span>
+      </div>
+      <div class="stat-chip">
+        <span class="stat-chip__value">OCR</span>
+        <span class="stat-chip__label">Adobe AI</span>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <button class="settings-toggle" id="settingsToggle">
+      ⚙️ Impostazioni Backend
+    </button>
+    <div class="settings-panel" id="settingsPanel">
+      <div class="settings-panel__content">
+        <div class="input-group">
+          <label for="backendUrl">URL Backend</label>
+          <input type="url" id="backendUrl" placeholder="https://your-app.onrender.com">
+        </div>
+        <button class="btn-save-settings" id="saveSettings">Salva Impostazioni</button>
+      </div>
+    </div>
+
+    <footer class="footer">
+      Powered by <a href="https://developer.adobe.com/document-services/" target="_blank" rel="noopener">Adobe PDF Services</a>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
