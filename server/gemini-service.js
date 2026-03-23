@@ -1,14 +1,18 @@
 /* ============================================
    Gemini AI — Text Correction Service
-   Paragraph-Based with Smart Batching (v3)
+   v4: Structure-Aware + Token Counting + Parallel
    ============================================ */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const JSZip = require('jszip');
 
 const GEMINI_MODEL = 'gemini-3.1-pro-preview';
-const BATCH_CHAR_LIMIT = 20000;  // Max chars per Gemini batch
-const CONTEXT_OVERLAP = 2;       // Paragraphs of overlap between batches
+const CHARS_PER_TOKEN = 3.5;          // Italian text avg (conservative)
+const MAX_TOKENS_PER_BATCH = 6000;    // ~21K chars — safe for input+output
+const CONTEXT_OVERLAP = 2;            // Paragraphs of overlap between batches
+const PARALLEL_CONCURRENCY = 3;       // Max simultaneous Gemini calls
+const RETRY_DELAY_MS = 1000;          // Delay on rate-limit retry
+const MAX_RETRIES = 2;                // Max retries per batch
 
 let genAI = null;
 let model = null;
@@ -20,9 +24,17 @@ function initGemini(apiKey) {
   return true;
 }
 
+// --- Token Estimation ---
+
+function estimateTokens(text) {
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
+}
+
+// --- Paragraph Extraction ---
+
 /**
- * Extract paragraphs from DOCX XML.
- * Each <w:p> element is a paragraph with its own text segments.
+ * Extract paragraphs from DOCX XML with structure detection.
+ * Detects headings via <w:pStyle> to enable structure-aware batching.
  */
 function extractParagraphs(docXml) {
   const paragraphs = [];
@@ -32,6 +44,16 @@ function extractParagraphs(docXml) {
   while ((match = paraRegex.exec(docXml)) !== null) {
     const paraXml = match[0];
     const paraStart = match.index;
+
+    // Detect heading style
+    const headingMatch = paraXml.match(/<w:pStyle\s+w:val="([^"]*[Hh]eading\d?[^"]*)"/);
+    const tocMatch = paraXml.match(/<w:pStyle\s+w:val="([^"]*[Tt]itle[^"]*)"/);
+    const isHeading = !!(headingMatch || tocMatch);
+    const headingLevel = headingMatch
+      ? parseInt((headingMatch[1].match(/\d/) || ['9'])[0], 10)
+      : tocMatch ? 0 : null;
+
+    // Extract <w:t> segments
     const textRegex = /<w:t([^>]*)>([^<]*)<\/w:t>/g;
     let textMatch;
     const segments = [];
@@ -51,112 +73,181 @@ function extractParagraphs(docXml) {
       xml: paraXml,
       globalStart: paraStart,
       text: fullText.trim(),
-      segments: segments,
+      segments,
+      isHeading,
+      headingLevel,
     });
   }
 
   return paragraphs;
 }
 
+// --- Structure-Aware Batching ---
+
 /**
- * Group text paragraphs into smart batches.
- * - Each batch stays under BATCH_CHAR_LIMIT
- * - Never splits mid-paragraph
- * - Includes CONTEXT_OVERLAP paragraphs from previous batch as context
+ * Groups paragraphs into semantic sections based on headings.
+ * Each section starts with a heading and contains all following paragraphs
+ * until the next heading of equal or higher level.
+ */
+function groupBySections(textParagraphs) {
+  const sections = [];
+  let currentSection = { heading: null, paragraphs: [] };
+
+  for (const para of textParagraphs) {
+    if (para.isHeading) {
+      // Save current section if it has content
+      if (currentSection.paragraphs.length > 0) {
+        sections.push(currentSection);
+      }
+      currentSection = { heading: para, paragraphs: [para] };
+    } else {
+      currentSection.paragraphs.push(para);
+    }
+  }
+
+  // Don't forget the last section
+  if (currentSection.paragraphs.length > 0) {
+    sections.push(currentSection);
+  }
+
+  return sections;
+}
+
+/**
+ * Create smart batches respecting:
+ * 1. Section boundaries (never split a section if possible)
+ * 2. Token limits (MAX_TOKENS_PER_BATCH)
+ * 3. Contextual overlap (CONTEXT_OVERLAP paragraphs)
  */
 function createBatches(textParagraphs) {
+  const sections = groupBySections(textParagraphs);
   const batches = [];
-  let batchStart = 0;
+  let currentBatch = { paragraphs: [], context: [], tokens: 0 };
+  let prevBatchLastParas = [];
 
-  while (batchStart < textParagraphs.length) {
-    let charCount = 0;
-    let batchEnd = batchStart;
+  for (const section of sections) {
+    const sectionTokens = section.paragraphs.reduce(
+      (sum, p) => sum + estimateTokens(p.text) + 5, 0 // +5 for [N] overhead
+    );
 
-    // Fill batch until char limit
-    while (batchEnd < textParagraphs.length) {
-      const paraLen = textParagraphs[batchEnd].text.length + 10; // +10 for [N] prefix
-      if (charCount + paraLen > BATCH_CHAR_LIMIT && batchEnd > batchStart) {
-        break; // Would exceed limit, stop here
-      }
-      charCount += paraLen;
-      batchEnd++;
+    // If section fits in current batch, add it
+    if (currentBatch.tokens + sectionTokens <= MAX_TOKENS_PER_BATCH) {
+      currentBatch.paragraphs.push(...section.paragraphs);
+      currentBatch.tokens += sectionTokens;
     }
+    // If section is too big for any single batch, split it by paragraphs
+    else if (sectionTokens > MAX_TOKENS_PER_BATCH) {
+      // Flush current batch first
+      if (currentBatch.paragraphs.length > 0) {
+        currentBatch.context = [...prevBatchLastParas];
+        batches.push(currentBatch);
+        prevBatchLastParas = currentBatch.paragraphs.slice(-CONTEXT_OVERLAP);
+        currentBatch = { paragraphs: [], context: [], tokens: 0 };
+      }
 
-    // Build context: last N paragraphs from previous batch
-    const contextParas = [];
-    if (batches.length > 0 && batchStart > 0) {
-      const contextStart = Math.max(0, batchStart - CONTEXT_OVERLAP);
-      for (let i = contextStart; i < batchStart; i++) {
-        contextParas.push(textParagraphs[i]);
+      // Split large section paragraph by paragraph
+      for (const para of section.paragraphs) {
+        const paraTokens = estimateTokens(para.text) + 5;
+
+        if (currentBatch.tokens + paraTokens > MAX_TOKENS_PER_BATCH && currentBatch.paragraphs.length > 0) {
+          currentBatch.context = [...prevBatchLastParas];
+          batches.push(currentBatch);
+          prevBatchLastParas = currentBatch.paragraphs.slice(-CONTEXT_OVERLAP);
+          currentBatch = { paragraphs: [], context: [], tokens: 0 };
+        }
+
+        currentBatch.paragraphs.push(para);
+        currentBatch.tokens += paraTokens;
       }
     }
+    // Section doesn't fit in current batch but fits in a new one
+    else {
+      if (currentBatch.paragraphs.length > 0) {
+        currentBatch.context = [...prevBatchLastParas];
+        batches.push(currentBatch);
+        prevBatchLastParas = currentBatch.paragraphs.slice(-CONTEXT_OVERLAP);
+      }
+      currentBatch = {
+        paragraphs: [...section.paragraphs],
+        context: [...prevBatchLastParas],
+        tokens: sectionTokens,
+      };
+    }
+  }
 
-    batches.push({
-      paragraphs: textParagraphs.slice(batchStart, batchEnd),
-      context: contextParas,
-      startIdx: batchStart,
-      endIdx: batchEnd,
-    });
-
-    batchStart = batchEnd;
+  // Flush remaining
+  if (currentBatch.paragraphs.length > 0) {
+    currentBatch.context = [...prevBatchLastParas];
+    batches.push(currentBatch);
   }
 
   return batches;
 }
 
+// --- Gemini API Calls ---
+
 /**
- * Send a single batch to Gemini for correction.
- * Context paragraphs are included but marked as non-correctable.
+ * Send a single batch to Gemini with retry on rate-limit.
  */
 async function correctBatch(batch, batchNum, totalBatches) {
-  // Build the context section (if any)
   let contextSection = '';
   if (batch.context.length > 0) {
-    const contextLines = batch.context
-      .map(p => `[CTX] ${p.text}`)
-      .join('\n');
+    const contextLines = batch.context.map(p => `[CTX] ${p.text}`).join('\n');
     contextSection = `\nCONTESTO PRECEDENTE (NON correggere, solo per riferimento):\n${contextLines}\n\n`;
   }
 
-  // Build the numbered list of paragraphs to correct
   const numberedList = batch.paragraphs
     .map((p, i) => `[${i}] ${p.text}`)
     .join('\n');
 
   const prompt = `Sei un esperto correttore di testi OCR in italiano.
 
-Ti invio una lista numerata di paragrafi estratti da un PDF scansionato via OCR (batch ${batchNum}/${totalBatches}). Ogni riga inizia con [N] seguito dal testo del paragrafo.
+Ti invio una lista di paragrafi da un PDF scansionato (batch ${batchNum}/${totalBatches}).
 ${contextSection}
-REGOLE FONDAMENTALI:
-1. Correggi SOLO gli errori evidenti dell'OCR (lettere confuse come m↔n, o↔0, l↔1, rn↔m, parole spezzate, ecc.)
-2. NON cambiare il significato, lo stile o la struttura
-3. NON aggiungere o rimuovere contenuto
-4. NON unire o dividere paragrafi — mantieni ESATTAMENTE lo stesso numero di righe
-5. Ogni riga della risposta DEVE iniziare con lo stesso [N] dell'input
-6. Se un paragrafo è già corretto, ripetilo identico
-7. Mantieni titoli, numerazione e riferimenti biblici intatti
-8. NON correggere le righe [CTX] — sono solo contesto
+REGOLE:
+1. Correggi SOLO errori OCR evidenti (m↔n, o↔0, l↔1, rn↔m, parole spezzate)
+2. NON cambiare significato, stile o struttura
+3. NON aggiungere/rimuovere contenuto né unire/dividere paragrafi
+4. Ogni riga DEVE mantenere lo stesso [N]. Paragrafi già corretti: ripetili identici
+5. NON correggere le righe [CTX]
 
-PARAGRAFI DA CORREGGERE:
+PARAGRAFI:
 ${numberedList}
 
-RISPONDI con la lista corretta nello STESSO formato [N], una riga per paragrafo. Nessuna spiegazione.`;
+RISPONDI nello STESSO formato [N]. Nessuna spiegazione.`;
 
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 30000 },
-  });
+  // Retry loop for rate limiting
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 30000 },
+      });
 
-  const response = result.response.text();
+      return parseGeminiResponse(result.response.text());
+    } catch (err) {
+      const isRateLimit = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
+      if (isRateLimit && attempt < MAX_RETRIES) {
+        const delay = RETRY_DELAY_MS * (attempt + 1) * 2; // Exponential backoff
+        console.log(`⏳ Rate limit batch ${batchNum}, retry in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
 
-  // Parse response: extract [N] → text mapping
+/**
+ * Parse Gemini's [N] response format into a Map.
+ */
+function parseGeminiResponse(response) {
   const corrections = new Map();
   const lines = response.split('\n');
   let currentIdx = null;
   let currentText = '';
 
   for (const line of lines) {
-    // Skip context lines in response (if Gemini echoes them)
     if (line.startsWith('[CTX]')) continue;
 
     const idxMatch = line.match(/^\[(\d+)\]\s*(.*)/);
@@ -177,65 +268,89 @@ RISPONDI con la lista corretta nello STESSO formato [N], una riga per paragrafo.
   return corrections;
 }
 
+// --- Parallel Execution ---
+
 /**
- * Main correction pipeline with smart batching.
- * Handles documents of any size by splitting into batches.
+ * Execute batches with controlled concurrency.
+ * Runs up to PARALLEL_CONCURRENCY batches simultaneously.
  */
+async function processBatchesParallel(batches) {
+  const allCorrections = [];
+  const totalBatches = batches.length;
+
+  // Process in waves of PARALLEL_CONCURRENCY
+  for (let i = 0; i < batches.length; i += PARALLEL_CONCURRENCY) {
+    const wave = batches.slice(i, i + PARALLEL_CONCURRENCY);
+    const waveStart = i;
+
+    const promises = wave.map(async (batch, waveIdx) => {
+      const batchNum = waveStart + waveIdx + 1;
+      try {
+        console.log(`🤖 Batch ${batchNum}/${totalBatches}: ${batch.paragraphs.length} para, ~${batch.tokens} token, ctx: ${batch.context.length}`);
+        const corrections = await correctBatch(batch, batchNum, totalBatches);
+        return { batchNum, batch, corrections };
+      } catch (err) {
+        console.error(`⚠️ Batch ${batchNum} failed: ${err.message}`);
+        return { batchNum, batch, corrections: new Map() };
+      }
+    });
+
+    const results = await Promise.all(promises);
+    allCorrections.push(...results);
+
+    // Small delay between waves
+    if (i + PARALLEL_CONCURRENCY < batches.length) {
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  return allCorrections;
+}
+
+// --- Main Pipeline ---
+
 async function correctParagraphsWithGemini(paragraphs) {
   if (!model) throw new Error('Gemini non configurato. Aggiungi GEMINI_API_KEY.');
 
-  // Filter paragraphs with actual text content
   const textParagraphs = paragraphs
-    .map((p, i) => ({ index: i, text: p.text }))
+    .map((p, i) => ({ ...p, origIndex: i }))
     .filter(p => p.text.length > 3);
 
   if (textParagraphs.length === 0) return null;
 
-  // Create smart batches
+  const totalChars = textParagraphs.reduce((s, p) => s + p.text.length, 0);
+  const totalTokens = estimateTokens(totalChars.toString()) + textParagraphs.reduce((s, p) => s + estimateTokens(p.text), 0);
+
+  // Create structure-aware batches
   const batches = createBatches(textParagraphs);
 
-  console.log(`📦 Batch creati: ${batches.length} (${textParagraphs.length} paragrafi, ~${Math.round(textParagraphs.reduce((s, p) => s + p.text.length, 0) / 1000)}K chars)`);
+  const sectionCount = groupBySections(textParagraphs).length;
+  console.log(`📦 ${batches.length} batch | ${textParagraphs.length} paragrafi | ${sectionCount} sezioni | ~${Math.round(totalChars / 1000)}K chars (~${totalTokens} token)`);
+  console.log(`🚀 Concorrenza: ${Math.min(PARALLEL_CONCURRENCY, batches.length)} batch simultanei`);
 
-  // Process each batch
-  const allCorrections = new Map();
+  // Process in parallel
+  const results = await processBatchesParallel(batches);
 
-  for (let b = 0; b < batches.length; b++) {
-    const batch = batches[b];
-    console.log(`🤖 Batch ${b + 1}/${batches.length}: ${batch.paragraphs.length} paragrafi (contesto: ${batch.context.length})`);
+  // Map corrections back to global paragraph indices
+  const globalCorrections = new Map();
 
-    try {
-      const batchCorrections = await correctBatch(batch, b + 1, batches.length);
-
-      // Map batch-local indices back to global paragraph indices
-      batchCorrections.forEach((correctedText, localIdx) => {
-        if (localIdx >= 0 && localIdx < batch.paragraphs.length) {
-          const globalIdx = batch.paragraphs[localIdx].index;
-          allCorrections.set(globalIdx, correctedText);
-        }
-      });
-
-      // Small delay between batches to avoid rate limiting
-      if (b < batches.length - 1) {
-        await new Promise(r => setTimeout(r, 500));
+  for (const { batch, corrections } of results) {
+    corrections.forEach((correctedText, localIdx) => {
+      if (localIdx >= 0 && localIdx < batch.paragraphs.length) {
+        const globalIdx = batch.paragraphs[localIdx].origIndex;
+        globalCorrections.set(globalIdx, correctedText);
       }
-    } catch (err) {
-      console.error(`⚠️ Batch ${b + 1} failed: ${err.message}`);
-      // Continue with other batches — partial correction is better than none
-    }
+    });
   }
 
-  return allCorrections.size > 0 ? allCorrections : null;
+  return globalCorrections.size > 0 ? globalCorrections : null;
 }
 
-/**
- * Apply corrected text to a single paragraph's XML.
- * Distributes text proportionally across existing <w:t> tags
- * to preserve each run's formatting (font size, bold, italic, etc.)
- */
+// --- Text Replacement ---
+
 function applyParagraphCorrection(paraXml, correctedText, segments) {
   if (segments.length === 0) return paraXml;
 
-  // Single segment: direct replacement
   if (segments.length === 1) {
     const seg = segments[0];
     const escaped = escapeXml(correctedText);
@@ -247,50 +362,37 @@ function applyParagraphCorrection(paraXml, correctedText, segments) {
       paraXml.substring(seg.localIndex + seg.fullMatch.length);
   }
 
-  // Multiple segments: proportional distribution
+  // Proportional distribution across runs
   const totalOrigLen = segments.reduce((sum, s) => sum + s.text.length, 0);
   if (totalOrigLen === 0) return paraXml;
 
   const distribution = [];
-  let correctedRemaining = correctedText;
+  let remaining = correctedText;
 
   for (let i = 0; i < segments.length; i++) {
     if (i === segments.length - 1) {
-      distribution.push(correctedRemaining);
+      distribution.push(remaining);
     } else {
       const ratio = segments[i].text.length / totalOrigLen;
       let targetLen = Math.round(correctedText.length * ratio);
+      let cutPos = Math.max(0, Math.min(targetLen, remaining.length));
 
-      // Find nearest word boundary
-      let cutPos = targetLen;
+      // Snap to nearest word boundary (±10 chars)
       let bestCut = cutPos;
-      let bestDist = Infinity;
-
-      for (let d = 0; d <= 10 && cutPos + d <= correctedRemaining.length; d++) {
-        if (correctedRemaining[cutPos + d] === ' ') {
-          bestCut = cutPos + d;
-          bestDist = d;
-          break;
+      for (let d = 0; d <= 10; d++) {
+        if (cutPos + d < remaining.length && remaining[cutPos + d] === ' ') {
+          bestCut = cutPos + d; break;
         }
-        if (cutPos - d >= 0 && correctedRemaining[cutPos - d] === ' ') {
-          bestCut = cutPos - d;
-          bestDist = d;
-          break;
+        if (cutPos - d >= 0 && remaining[cutPos - d] === ' ') {
+          bestCut = cutPos - d; break;
         }
       }
 
-      if (bestDist === Infinity) bestCut = targetLen;
-      bestCut = Math.max(0, Math.min(bestCut, correctedRemaining.length));
-
-      distribution.push(correctedRemaining.substring(0, bestCut));
-      correctedRemaining = correctedRemaining.substring(bestCut);
-      if (correctedRemaining.startsWith(' ')) {
-        correctedRemaining = correctedRemaining.substring(1);
-      }
+      distribution.push(remaining.substring(0, bestCut));
+      remaining = remaining.substring(bestCut).replace(/^ /, '');
     }
   }
 
-  // Apply backwards to preserve positions
   let modifiedXml = paraXml;
   for (let i = segments.length - 1; i >= 0; i--) {
     const seg = segments[i];
@@ -315,14 +417,12 @@ function escapeXml(text) {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Full pipeline: extract → batch → correct → apply
- */
+// --- Full Pipeline ---
+
 async function correctDocxWithGemini(docxBuffer) {
   const zip = await JSZip.loadAsync(docxBuffer);
   let docXml = await zip.file('word/document.xml').async('string');
 
-  // Step 1: Extract
   const paragraphs = extractParagraphs(docXml);
   const textParas = paragraphs.filter(p => p.text.length > 3);
 
@@ -331,19 +431,18 @@ async function correctDocxWithGemini(docxBuffer) {
     return docxBuffer;
   }
 
-  console.log(`📝 Paragrafi con testo: ${textParas.length} su ${paragraphs.length} totali`);
+  console.log(`📝 Paragrafi: ${textParas.length}/${paragraphs.length} (heading: ${textParas.filter(p => p.isHeading).length})`);
 
-  // Step 2: Correct with batching
   const corrections = await correctParagraphsWithGemini(paragraphs);
 
   if (!corrections || corrections.size === 0) {
-    console.log('⚠️ Gemini non ha restituito correzioni');
+    console.log('⚠️ Nessuna correzione da Gemini');
     return docxBuffer;
   }
 
-  console.log(`✅ Paragrafi corretti: ${corrections.size}`);
+  console.log(`✅ Corretti: ${corrections.size} paragrafi`);
 
-  // Step 3: Apply corrections backwards
+  // Apply backwards
   const sortedIndices = [...corrections.keys()].sort((a, b) => b - a);
 
   for (const idx of sortedIndices) {
@@ -351,24 +450,15 @@ async function correctDocxWithGemini(docxBuffer) {
     const correctedText = corrections.get(idx);
     if (correctedText === para.text) continue;
 
-    const correctedParaXml = applyParagraphCorrection(
-      para.xml,
-      correctedText,
-      para.segments
-    );
-
+    const correctedXml = applyParagraphCorrection(para.xml, correctedText, para.segments);
     docXml =
       docXml.substring(0, para.globalStart) +
-      correctedParaXml +
+      correctedXml +
       docXml.substring(para.globalStart + para.xml.length);
   }
 
-  // Step 4: Save
   zip.file('word/document.xml', docXml);
-  return await zip.generateAsync({
-    type: 'nodebuffer',
-    compression: 'DEFLATE',
-  });
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
 module.exports = {
