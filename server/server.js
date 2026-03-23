@@ -1,5 +1,5 @@
 /* ============================================
-   PDF2DOC â€” Backend Server (Express.js)
+   PDF2DOC — Backend Server (Express.js)
    ============================================ */
 
 require('dotenv').config();
@@ -24,7 +24,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const geminiReady = gemini.initGemini(GEMINI_API_KEY);
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('âš ï¸  Manca PDF_SERVICES_CLIENT_ID o PDF_SERVICES_CLIENT_SECRET nel file .env');
+  console.error('⚠️  Manca PDF_SERVICES_CLIENT_ID o PDF_SERVICES_CLIENT_SECRET nel file .env');
   console.error('   Crea un file .env con le credenziali Adobe. Vedi .env.example');
   process.exit(1);
 }
@@ -36,7 +36,7 @@ app.use(express.json());
 // Serve frontend files from parent directory
 app.use(express.static(path.join(__dirname, '..')));
 
-// Multer config â€” in-memory storage (max 100 MB)
+// Multer config — in-memory storage (max 100 MB)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
@@ -78,7 +78,7 @@ function requireApiKey(req, res, next) {
 /**
  * POST /api/convert
  * Upload a PDF and start conversion to DOCX.
- * Body: multipart/form-data with 'pdf' file and optional 'ocr' flag
+ * Body: multipart/form-data with 'pdf' file and optional 'gemini' flag
  */
 app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) => {
   try {
@@ -147,7 +147,7 @@ app.get('/api/download/:jobId', (req, res) => {
   }
 
   if (job.status !== 'done' || !job.result) {
-    return res.status(400).json({ error: 'Il file non Ã¨ ancora pronto.' });
+    return res.status(400).json({ error: 'Il file non è ancora pronto.' });
   }
 
   const docxName = job.fileName
@@ -187,7 +187,7 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
   job.message = 'Caricamento PDF su Adobe Cloud...';
   const { assetID } = await adobe.uploadAsset(token, CLIENT_ID, pdfBuffer);
 
-  // Step 3: Export to DOCX (1 single transaction)
+  // Step 3: Export to DOCX (1 single transaction, OCR auto-detected)
   job.message = 'Conversione in DOCX con Adobe...';
   const exportJobUrl = await adobe.exportPdfToDocx(token, CLIENT_ID, assetID);
 
@@ -202,13 +202,13 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
   // Step 6: If Gemini correction is requested AND configured, correct text with AI
   if (useGemini && geminiReady) {
     try {
-      job.message = 'ðŸ¤– Gemini AI sta correggendo il testo OCR...';
-      console.log(`ðŸ¤– Job ${jobId}: avvio correzione Gemini...`);
+      job.message = '🤖 Gemini AI sta correggendo il testo OCR...';
+      console.log(`🤖 Job ${jobId}: avvio correzione Gemini...`);
       docxBuffer = await gemini.correctDocxWithGemini(docxBuffer);
-      console.log(`ðŸ¤– Job ${jobId}: correzione Gemini completata`);
+      console.log(`🤖 Job ${jobId}: correzione Gemini completata`);
     } catch (err) {
       // Gemini failure is non-fatal: return the uncorrected DOCX
-      console.error(`âš ï¸ Job ${jobId}: Gemini correction failed: ${err.message}`);
+      console.error(`⚠️ Job ${jobId}: Gemini correction failed: ${err.message}`);
       job.message = 'Conversione completata (senza correzione AI)';
     }
   }
@@ -221,7 +221,7 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
   job.result = docxBuffer;
 
   const mode = useGemini && geminiReady ? 'Adobe+Gemini' : 'Adobe';
-  console.log(`âœ… Job ${jobId} completato (${mode}): ${job.fileName}`);
+  console.log(`✅ Job ${jobId} completato (${mode}): ${job.fileName}`);
 }
 
 // --- Error Handler ---
@@ -237,9 +237,9 @@ app.use((err, req, res, next) => {
 
 // --- Start ---
 app.listen(PORT, () => {
-  console.log('PDF2DOC Backend avviato su http://localhost:' + PORT);
-  console.log('Adobe Client ID: ' + CLIENT_ID.substring(0, 8) + '...');
-  console.log('OCR: si (it-IT)');
-  console.log('Protezione API: ' + (API_ACCESS_KEY ? 'ATTIVA' : 'disattiva'));
-  console.log('Gemini AI: ' + (geminiReady ? 'ATTIVA (gemini-3.1-pro-preview)' : 'disattiva'));
+  console.log(`🚀 PDF2DOC Backend avviato su http://localhost:${PORT}`);
+  console.log(`📄 Adobe Client ID: ${CLIENT_ID.substring(0, 8)}...`);
+  console.log(`🔒 OCR: sempre attivo (it-IT)`);
+  console.log(`🔑 Protezione API: ${API_ACCESS_KEY ? 'ATTIVA' : 'disattiva'}`);
+  console.log(`🤖 Gemini AI: ${geminiReady ? 'ATTIVA (gemini-3.1-pro-preview)' : 'disattiva'}`);
 });
