@@ -292,7 +292,7 @@
   }
 
   async function pollConversion(backendUrl, jobId) {
-    const maxAttempts = 60;
+    const maxAttempts = 150; // 150 × 2s = 5 min timeout
     let attempts = 0;
 
     const poll = async () => {
