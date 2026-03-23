@@ -77,46 +77,23 @@
     return !!getBackendUrl();
   }
 
-  // --- Stats ---
-  function loadStats() {
+  // --- Stats (from backend API) ---
+  async function loadStats() {
     try {
-      const stats = JSON.parse(localStorage.getItem(CONFIG.STATS_KEY) || '{}');
-      const now = new Date();
-      const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
-
-      if (stats.month !== monthKey) {
-        stats.month = monthKey;
-        stats.converted = 0;
-        stats.remaining = 500;
-      }
-
-      statConverted.textContent = stats.converted || 0;
-      statRemaining.textContent = stats.remaining ?? 500;
+      const backendUrl = getBackendUrl();
+      const res = await fetch(`${backendUrl}/api/stats`);
+      if (!res.ok) throw new Error('Stats not available');
+      const data = await res.json();
+      statConverted.textContent = data.conversions || 0;
+      statRemaining.textContent = data.remaining ?? 500;
     } catch {
-      statConverted.textContent = '0';
-      statRemaining.textContent = '500';
+      statConverted.textContent = '-';
+      statRemaining.textContent = '-';
     }
   }
 
-  function updateStats() {
-    try {
-      const now = new Date();
-      const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
-      const stats = JSON.parse(localStorage.getItem(CONFIG.STATS_KEY) || '{}');
-
-      if (stats.month !== monthKey) {
-        stats.month = monthKey;
-        stats.converted = 0;
-        stats.remaining = 500;
-      }
-
-      stats.converted = (stats.converted || 0) + 1;
-      stats.remaining = Math.max(0, (stats.remaining ?? 500) - 1);
-
-      localStorage.setItem(CONFIG.STATS_KEY, JSON.stringify(stats));
-      statConverted.textContent = stats.converted;
-      statRemaining.textContent = stats.remaining;
-    } catch { /* silent */ }
+  async function updateStats() {
+    await loadStats(); // Reload from backend after conversion
   }
 
   // --- Event Binding ---

@@ -17,3 +17,6 @@ Thumbs.db
 
 # Backup
 .backup/
+
+# Stats (server-side transaction counter)
+.stats.json

@@ -8,6 +8,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 const adobe = require('./adobe-service');
 const gemini = require('./gemini-service');
 
@@ -51,6 +52,33 @@ const upload = multer({
 
 // --- In-memory job store ---
 const jobs = new Map();
+
+// --- Transaction Counter (file-persisted) ---
+const STATS_FILE = path.join(__dirname, '.stats.json');
+const ADOBE_FREE_LIMIT = 500; // Adobe free tier: 500 Document Transactions/month
+
+function loadStats() {
+  try {
+    const data = JSON.parse(fs.readFileSync(STATS_FILE, 'utf-8'));
+    // Reset monthly if month changed
+    const now = new Date();
+    const statsMonth = data.month || '';
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (statsMonth !== currentMonth) {
+      return { month: currentMonth, conversions: 0, transactions: 0 };
+    }
+    return data;
+  } catch {
+    const now = new Date();
+    return { month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, conversions: 0, transactions: 0 };
+  }
+}
+
+function saveStats(stats) {
+  try { fs.writeFileSync(STATS_FILE, JSON.stringify(stats)); } catch {}
+}
+
+let stats = loadStats();
 
 // Cleanup old jobs every 30 minutes
 setInterval(() => {
@@ -174,6 +202,22 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+/**
+ * GET /api/stats
+ * Return conversion stats
+ */
+app.get('/api/stats', (req, res) => {
+  stats = loadStats(); // Reload to check month reset
+  res.json({
+    month: stats.month,
+    conversions: stats.conversions,
+    transactions: stats.transactions,
+    limit: ADOBE_FREE_LIMIT,
+    remaining: Math.max(0, ADOBE_FREE_LIMIT - stats.transactions),
+    geminiEnabled: geminiReady,
+  });
+});
+
 // --- Background Conversion ---
 async function processConversion(jobId, pdfBuffer, useGemini) {
   const job = jobs.get(jobId);
@@ -213,7 +257,12 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
     }
   }
 
-  // Done!
+  // Done — update stats
+  stats = loadStats();
+  stats.conversions++;
+  stats.transactions++; // 1 export = 1 Document Transaction
+  saveStats(stats);
+
   job.status = 'done';
   job.message = useGemini && geminiReady
     ? 'Conversione completata con correzione AI!'
@@ -221,7 +270,7 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
   job.result = docxBuffer;
 
   const mode = useGemini && geminiReady ? 'Adobe+Gemini' : 'Adobe';
-  console.log(`✅ Job ${jobId} completato (${mode}): ${job.fileName}`);
+  console.log(`✅ Job ${jobId} completato (${mode}): ${job.fileName} [${stats.transactions}/${ADOBE_FREE_LIMIT} transazioni]`);
 }
 
 // --- Error Handler ---
