@@ -6,7 +6,14 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const JSZip = require('jszip');
 
-const GEMINI_MODEL = 'gemini-3.1-pro-preview';
+const GEMINI_MODEL_DEFAULT = 'gemini-2.0-flash';  // Free tier default
+const AVAILABLE_MODELS = {
+  'gemini-2.0-flash':       { label: 'Gemini 2.0 Flash (Gratis)',     free: true },
+  'gemini-2.0-flash-lite':  { label: 'Gemini 2.0 Flash Lite (Gratis)', free: true },
+  'gemini-2.5-flash-preview-05-20': { label: 'Gemini 2.5 Flash (Gratis)', free: true },
+  'gemini-2.5-pro-preview-05-06':   { label: 'Gemini 2.5 Pro (Pagamento)', free: false },
+};
+let currentModelName = GEMINI_MODEL_DEFAULT;
 const CHARS_PER_TOKEN = 3.5;          // Italian text avg (conservative)
 const MAX_TOKENS_PER_BATCH = 6000;    // ~21K chars — safe for input+output
 const CONTEXT_OVERLAP = 2;            // Paragraphs of overlap between batches
@@ -17,11 +24,25 @@ const MAX_RETRIES = 2;                // Max retries per batch
 let genAI = null;
 let model = null;
 
-function initGemini(apiKey) {
+function initGemini(apiKey, modelName) {
   if (!apiKey) return false;
   genAI = new GoogleGenerativeAI(apiKey);
-  model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+  currentModelName = modelName || GEMINI_MODEL_DEFAULT;
+  model = genAI.getGenerativeModel({ model: currentModelName });
   return true;
+}
+
+function setModel(modelName) {
+  if (!genAI || !modelName) return false;
+  if (!AVAILABLE_MODELS[modelName]) return false;
+  currentModelName = modelName;
+  model = genAI.getGenerativeModel({ model: currentModelName });
+  console.log(`🤖 Modello Gemini cambiato: ${currentModelName}`);
+  return true;
+}
+
+function getModelName() {
+  return currentModelName;
 }
 
 // --- Token Estimation ---
@@ -479,7 +500,10 @@ async function correctDocxWithGemini(docxBuffer, job) {
 
 module.exports = {
   initGemini,
+  setModel,
+  getModelName,
   correctDocxWithGemini,
   extractParagraphs,
   correctParagraphsWithGemini,
+  AVAILABLE_MODELS,
 };

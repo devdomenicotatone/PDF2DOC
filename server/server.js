@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const adobe = require('./adobe-service');
 const gemini = require('./gemini-service');
+const { normalizeDocxFontSize, setDocxMargins } = require('./normalize-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -104,9 +105,20 @@ function requireApiKey(req, res, next) {
 // --- Routes ---
 
 /**
+ * GET /api/models
+ * Returns available Gemini models and current selection.
+ */
+app.get('/api/models', (req, res) => {
+  res.json({
+    current: gemini.getModelName(),
+    models: gemini.AVAILABLE_MODELS,
+  });
+});
+
+/**
  * POST /api/convert
  * Upload a PDF and start conversion to DOCX.
- * Body: multipart/form-data with 'pdf' file and optional 'gemini' flag
+ * Body: multipart/form-data with 'pdf' file, optional 'gemini' flag, 'geminiModel', 'margins'
  */
 app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) => {
   try {
@@ -115,6 +127,17 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     }
 
     const useGemini = req.body.gemini === 'true';
+    const geminiModel = req.body.geminiModel || '';
+    let margins = null;
+    try {
+      if (req.body.margins) margins = JSON.parse(req.body.margins);
+    } catch {}
+
+    // Switch Gemini model if requested
+    if (geminiModel && useGemini) {
+      gemini.setModel(geminiModel);
+    }
+
     const jobId = crypto.randomUUID();
 
     // Create job entry
@@ -131,7 +154,7 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processConversion(jobId, req.file.buffer, useGemini).catch((err) => {
+    processConversion(jobId, req.file.buffer, useGemini, margins).catch((err) => {
       console.error(`Job ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -219,7 +242,7 @@ app.get('/api/stats', (req, res) => {
 });
 
 // --- Background Conversion ---
-async function processConversion(jobId, pdfBuffer, useGemini) {
+async function processConversion(jobId, pdfBuffer, useGemini, margins) {
   const job = jobs.get(jobId);
   if (!job) return;
 
@@ -242,6 +265,24 @@ async function processConversion(jobId, pdfBuffer, useGemini) {
   // Step 5: Download DOCX
   job.message = 'Download del file convertito...';
   let docxBuffer = await adobe.downloadResult(downloadUri);
+
+  // Step 5.5: Normalize font sizes (fix OCR size inconsistencies)
+  job.message = '📐 Normalizzazione font-size...';
+  try {
+    docxBuffer = await normalizeDocxFontSize(docxBuffer);
+  } catch (err) {
+    console.error(`⚠️ Job ${jobId}: Font normalization failed: ${err.message}`);
+  }
+
+  // Step 5.6: Apply page margins
+  if (margins) {
+    job.message = '📏 Impostazione margini pagina...';
+    try {
+      docxBuffer = await setDocxMargins(docxBuffer, margins);
+    } catch (err) {
+      console.error(`⚠️ Job ${jobId}: Margin setting failed: ${err.message}`);
+    }
+  }
 
   // Step 6: If Gemini correction is requested AND configured, correct text with AI
   if (useGemini && geminiReady) {
@@ -290,5 +331,5 @@ app.listen(PORT, () => {
   console.log(`📄 Adobe Client ID: ${CLIENT_ID.substring(0, 8)}...`);
   console.log(`🔒 OCR: sempre attivo (it-IT)`);
   console.log(`🔑 Protezione API: ${API_ACCESS_KEY ? 'ATTIVA' : 'disattiva'}`);
-  console.log(`🤖 Gemini AI: ${geminiReady ? 'ATTIVA (gemini-3.1-pro-preview)' : 'disattiva'}`);
+  console.log(`🤖 Gemini AI: ${geminiReady ? 'ATTIVA (' + gemini.getModelName() + ')' : 'disattiva'}`);
 });

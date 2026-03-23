@@ -59,8 +59,55 @@
           <span class="toggle__slider"></span>
         </label>
       </div>
+      <div class="option-row" id="geminiModelRow">
+        <div class="option-label">
+          <span class="option-label__desc">Modello AI</span>
+        </div>
+        <select id="geminiModelSelect" class="margin-select">
+          <option value="gemini-2.0-flash" selected>2.0 Flash (Gratis)</option>
+          <option value="gemini-2.0-flash-lite">2.0 Flash Lite (Gratis)</option>
+          <option value="gemini-2.5-flash-preview-05-20">2.5 Flash (Gratis)</option>
+          <option value="gemini-2.5-pro-preview-05-06">2.5 Pro (Pagamento)</option>
+        </select>
+      </div>
       <div class="option-hint" id="geminiHint">
-        Gemini 3.1 Pro analizza il testo estratto e corregge errori tipici dell'OCR (lettere confuse, parole spezzate) usando il contesto del documento. L'OCR è gestito automaticamente da Adobe quando necessario.
+        L'AI corregge errori OCR (lettere confuse, parole spezzate). I modelli Flash sono gratuiti, Pro è più preciso ma ha costi API.
+      </div>
+
+      <!-- Margin Selector -->
+      <div class="option-row">
+        <div class="option-label">
+          <span class="option-label__title">📏 Margini Pagina</span>
+          <span class="option-label__desc">Imposta i margini di tutte le pagine nel DOCX</span>
+        </div>
+        <select id="marginPreset" class="margin-select">
+          <option value="">Originali</option>
+          <option value="normali" selected>Normali (2.5 cm)</option>
+          <option value="stretti">Stretti (1.27 cm)</option>
+          <option value="medi">Medi (2.5/1.9 cm)</option>
+          <option value="larghi">Larghi (2.5/5 cm)</option>
+          <option value="custom">Personalizzati</option>
+        </select>
+      </div>
+      <div class="margin-custom" id="marginCustom">
+        <div class="margin-custom__grid">
+          <div class="margin-custom__field">
+            <label>Sup.</label>
+            <input type="number" id="marginTop" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          </div>
+          <div class="margin-custom__field">
+            <label>Inf.</label>
+            <input type="number" id="marginBottom" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          </div>
+          <div class="margin-custom__field">
+            <label>Sin.</label>
+            <input type="number" id="marginLeft" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          </div>
+          <div class="margin-custom__field">
+            <label>Dest.</label>
+            <input type="number" id="marginRight" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          </div>
+        </div>
       </div>
     </div>
 

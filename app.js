@@ -45,6 +45,10 @@
   const saveSettings = $('#saveSettings');
   const statConverted = $('#statConverted');
   const statRemaining = $('#statRemaining');
+  const marginPreset = $('#marginPreset');
+  const marginCustom = $('#marginCustom');
+  const geminiModelSelect = $('#geminiModelSelect');
+  const geminiModelRow = $('#geminiModelRow');
 
   // --- State ---
   let selectedFile = null;
@@ -170,6 +174,21 @@
       settingsPanel.classList.remove('settings-panel--open');
       showTemporaryButtonText(saveSettings, '✓ Salvato!', 'Salva Impostazioni');
     });
+
+    // Margin preset toggle
+    marginPreset.addEventListener('change', () => {
+      if (marginPreset.value === 'custom') {
+        marginCustom.classList.add('margin-custom--visible');
+      } else {
+        marginCustom.classList.remove('margin-custom--visible');
+      }
+    });
+
+    // Gemini toggle — show/hide model selector
+    geminiToggle.addEventListener('change', () => {
+      geminiModelRow.style.display = geminiToggle.checked ? '' : 'none';
+      geminiHint.style.display = geminiToggle.checked ? '' : 'none';
+    });
   }
 
   // --- File Handling ---
@@ -225,6 +244,13 @@
       const formData = new FormData();
       formData.append('pdf', selectedFile);
       formData.append('gemini', useGemini ? 'true' : 'false');
+      if (useGemini) {
+        formData.append('geminiModel', geminiModelSelect.value);
+      }
+
+      // Margins
+      const margins = getMargins();
+      if (margins) formData.append('margins', JSON.stringify(margins));
 
       setProgress(20, 'Invio al server di conversione...');
 
@@ -394,6 +420,20 @@
     setTimeout(() => {
       btn.textContent = originalText;
     }, 1500);
+  }
+
+  function getMargins() {
+    const preset = marginPreset.value;
+    if (!preset) return null; // "Originali" — don't touch margins
+    if (preset === 'custom') {
+      return {
+        top: parseFloat($('#marginTop').value) || 2.5,
+        bottom: parseFloat($('#marginBottom').value) || 2.5,
+        left: parseFloat($('#marginLeft').value) || 2.5,
+        right: parseFloat($('#marginRight').value) || 2.5,
+      };
+    }
+    return { preset };
   }
 
   // --- Start ---
