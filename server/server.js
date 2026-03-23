@@ -1,5 +1,5 @@
-/* ============================================
-   PDF2DOC — Backend Server (Express.js)
+﻿/* ============================================
+   PDF2DOC â€” Backend Server (Express.js)
    ============================================ */
 
 require('dotenv').config();
@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const adobe = require('./adobe-service');
+const gemini = require('./gemini-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,9 +18,13 @@ const PORT = process.env.PORT || 3000;
 const CLIENT_ID = process.env.PDF_SERVICES_CLIENT_ID;
 const CLIENT_SECRET = process.env.PDF_SERVICES_CLIENT_SECRET;
 const API_ACCESS_KEY = process.env.API_ACCESS_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+// Init Gemini
+const geminiReady = gemini.initGemini(GEMINI_API_KEY);
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-  console.error('⚠️  Manca PDF_SERVICES_CLIENT_ID o PDF_SERVICES_CLIENT_SECRET nel file .env');
+  console.error('âš ï¸  Manca PDF_SERVICES_CLIENT_ID o PDF_SERVICES_CLIENT_SECRET nel file .env');
   console.error('   Crea un file .env con le credenziali Adobe. Vedi .env.example');
   process.exit(1);
 }
@@ -31,7 +36,7 @@ app.use(express.json());
 // Serve frontend files from parent directory
 app.use(express.static(path.join(__dirname, '..')));
 
-// Multer config — in-memory storage (max 100 MB)
+// Multer config â€” in-memory storage (max 100 MB)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
@@ -142,7 +147,7 @@ app.get('/api/download/:jobId', (req, res) => {
   }
 
   if (job.status !== 'done' || !job.result) {
-    return res.status(400).json({ error: 'Il file non è ancora pronto.' });
+    return res.status(400).json({ error: 'Il file non Ã¨ ancora pronto.' });
   }
 
   const docxName = job.fileName
@@ -174,52 +179,49 @@ async function processConversion(jobId, pdfBuffer, useOCR) {
   const job = jobs.get(jobId);
   if (!job) return;
 
-  // Step 1: Auth
+  // Step 1: Auth with Adobe
   job.message = 'Autenticazione con Adobe...';
   const token = await adobe.getAccessToken(CLIENT_ID, CLIENT_SECRET);
 
-  // Step 2: Upload original PDF
+  // Step 2: Upload PDF
   job.message = 'Caricamento PDF su Adobe Cloud...';
-  let { assetID } = await adobe.uploadAsset(token, CLIENT_ID, pdfBuffer);
+  const { assetID } = await adobe.uploadAsset(token, CLIENT_ID, pdfBuffer);
 
-  // Step 3: If OCR is enabled, run dedicated OCR first (two-step flow)
-  if (useOCR) {
-    job.message = 'Fase 1/2: OCR dedicato in corso...';
-    const ocrJobUrl = await adobe.ocrPdf(token, CLIENT_ID, assetID);
-
-    job.message = 'Adobe sta riconoscendo il testo nel documento...';
-    const ocrDownloadUri = await adobe.pollJob(token, CLIENT_ID, ocrJobUrl);
-
-    // Download the OCR'd PDF (now has embedded text layer)
-    job.message = 'Download PDF con testo riconosciuto...';
-    const ocrPdfBuffer = await adobe.downloadResult(ocrDownloadUri);
-
-    // Re-upload the OCR'd PDF for DOCX conversion
-    job.message = 'Fase 2/2: Preparazione conversione DOCX...';
-    const uploaded = await adobe.uploadAsset(token, CLIENT_ID, ocrPdfBuffer);
-    assetID = uploaded.assetID;
-  }
-
-  // Step 4: Export to DOCX (from OCR'd PDF if OCR was used)
-  job.message = useOCR
-    ? 'Conversione PDF con testo in DOCX...'
-    : 'Conversione in DOCX...';
+  // Step 3: Export to DOCX (1 single transaction)
+  job.message = 'Conversione in DOCX con Adobe...';
   const exportJobUrl = await adobe.exportPdfToDocx(token, CLIENT_ID, assetID);
 
-  // Step 5: Poll until done
+  // Step 4: Poll until done
   job.message = 'Adobe sta generando il DOCX...';
   const downloadUri = await adobe.pollJob(token, CLIENT_ID, exportJobUrl);
 
-  // Step 6: Download result
+  // Step 5: Download DOCX
   job.message = 'Download del file convertito...';
-  const docxBuffer = await adobe.downloadResult(downloadUri);
+  let docxBuffer = await adobe.downloadResult(downloadUri);
+
+  // Step 6: If OCR enabled AND Gemini is configured, correct text with AI
+  if (useOCR && geminiReady) {
+    try {
+      job.message = 'ðŸ¤– Gemini AI sta correggendo il testo OCR...';
+      console.log(`ðŸ¤– Job ${jobId}: avvio correzione Gemini...`);
+      docxBuffer = await gemini.correctDocxWithGemini(docxBuffer);
+      console.log(`ðŸ¤– Job ${jobId}: correzione Gemini completata`);
+    } catch (err) {
+      // Gemini failure is non-fatal: return the uncorrected DOCX
+      console.error(`âš ï¸ Job ${jobId}: Gemini correction failed: ${err.message}`);
+      job.message = 'Conversione completata (senza correzione AI)';
+    }
+  }
 
   // Done!
   job.status = 'done';
-  job.message = 'Conversione completata!';
+  job.message = useOCR && geminiReady
+    ? 'Conversione completata con correzione AI!'
+    : 'Conversione completata!';
   job.result = docxBuffer;
 
-  console.log(`✅ Job ${jobId} completato${useOCR ? ' (OCR 2-step)' : ''}: ${job.fileName}`);
+  const mode = useOCR && geminiReady ? 'Adobe+Gemini' : 'Adobe';
+  console.log(`âœ… Job ${jobId} completato (${mode}): ${job.fileName}`);
 }
 
 // --- Error Handler ---
@@ -235,8 +237,9 @@ app.use((err, req, res, next) => {
 
 // --- Start ---
 app.listen(PORT, () => {
-  console.log(`🚀 PDF2DOC Backend avviato su http://localhost:${PORT}`);
-  console.log(`📄 Adobe Client ID: ${CLIENT_ID.substring(0, 8)}...`);
-  console.log(`🔒 OCR disponibile: sì (it-IT)`);
-  console.log(`🔑 Protezione API: ${API_ACCESS_KEY ? 'ATTIVA' : 'disattiva (nessuna API_ACCESS_KEY)'}`);
+  console.log('PDF2DOC Backend avviato su http://localhost:' + PORT);
+  console.log('Adobe Client ID: ' + CLIENT_ID.substring(0, 8) + '...');
+  console.log('OCR: si (it-IT)');
+  console.log('Protezione API: ' + (API_ACCESS_KEY ? 'ATTIVA' : 'disattiva'));
+  console.log('Gemini AI: ' + (geminiReady ? 'ATTIVA (gemini-3.1-pro-preview)' : 'disattiva'));
 });

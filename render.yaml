@@ -14,3 +14,5 @@ services:
         sync: false
       - key: NODE_ENV
         value: production
+      - key: GEMINI_API_KEY
+        sync: false
