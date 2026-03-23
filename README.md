@@ -12,6 +12,7 @@ Ogni utente deploya la propria istanza:
 ```
 Tuo Frontend (GitHub Pages)  →  Tuo Backend (Render)  →  Adobe PDF Services API
                                   (le tue credenziali)
+                                  (protetto da password)
 ```
 
 ## Quick Start (10 minuti)
@@ -36,26 +37,38 @@ Oppure manualmente:
    - **Build Command**: `npm install`
    - **Start Command**: `npm start`
 4. Aggiungi le variabili d'ambiente:
-   - `PDF_SERVICES_CLIENT_ID` → il tuo Client ID
-   - `PDF_SERVICES_CLIENT_SECRET` → il tuo Client Secret
+   - `PDF_SERVICES_CLIENT_ID` → il tuo Client ID Adobe
+   - `PDF_SERVICES_CLIENT_SECRET` → il tuo Client Secret Adobe
+   - `API_ACCESS_KEY` → scegli una password per proteggere il tuo server
 
 ### 3. 🌐 Usa la Webapp
 
-1. Apri la webapp (dal fork su GitHub Pages o localmente)
+1. Apri la webapp (GitHub Pages, Render, o `localhost:3000`)
 2. Clicca **⚙️ Impostazioni Backend** in basso
 3. Inserisci l'URL del tuo servizio Render (es. `https://tuo-nome.onrender.com`)
-4. Carica un PDF e converti! 🎉
+4. Inserisci la **password** che hai scelto come `API_ACCESS_KEY`
+5. Clicca **Salva Impostazioni** (la password è salvata localmente sul dispositivo)
+6. Carica un PDF e converti! 🎉
+
+## 🔒 Protezione
+
+Il backend è protetto da una **password** (variabile `API_ACCESS_KEY` su Render):
+
+- ✅ Chi conosce la password → può convertire
+- ❌ Chi non la conosce → errore 401 "Password non valida"
+- 🔐 Credenziali Adobe → mai esposte, solo sul server
+- 💾 Password salvata in localStorage → inserisci una volta, funziona sempre
 
 ### Uso locale (sviluppo)
 
 ```bash
 cd server
-cp .env.example .env   # inserisci le tue credenziali Adobe
+cp .env.example .env   # inserisci credenziali Adobe + password
 npm install
-npm start              # backend su http://localhost:3000
+npm start              # backend + frontend su http://localhost:3000
 ```
 
-Apri `index.html` nel browser → configura backend URL → pronto!
+Apri `http://localhost:3000` nel browser → inserisci la password → converti!
 
 ## Funzionalità
 
@@ -64,7 +77,8 @@ Apri `index.html` nel browser → configura backend URL → pronto!
 - ✅ Preserva immagini, tabelle e layout
 - ✅ Drag & drop con design premium mobile-first
 - ✅ Cross-platform: Windows, Mac, Linux, mobile
-- ✅ **Self-hosted**: ognuno usa le proprie credenziali e il proprio server
+- ✅ **Protetto da password** — solo utenti autorizzati
+- ✅ **Self-hosted** — ognuno usa le proprie credenziali e il proprio server
 
 ## Tech Stack
 
@@ -73,6 +87,7 @@ Apri `index.html` nel browser → configura backend URL → pronto!
 | Frontend | HTML5, CSS3 (Glassmorphism), vanilla JS |
 | Backend | Node.js, Express.js |
 | API | Adobe PDF Services REST API |
+| Auth | API Key (header `x-api-key`) |
 | Deploy | GitHub Pages + Render (free tier) |
 
 ## License
