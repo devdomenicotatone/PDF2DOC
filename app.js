@@ -292,7 +292,9 @@
   }
 
   async function pollConversion(backendUrl, jobId) {
+    let pollCount = 0;
     const poll = async () => {
+      pollCount++;
 
       const res = await fetch(`${backendUrl}/api/status/${jobId}`);
       const data = await res.json();
@@ -313,8 +315,8 @@
       }
 
       // Still processing
-      const fakeProgress = Math.min(85, 40 + attempts * 2);
-      setProgress(fakeProgress, data.message || 'Elaborazione con Adobe AI...');
+      const fakeProgress = Math.min(85, 40 + pollCount * 2);
+      setProgress(fakeProgress, data.message || 'Elaborazione in corso...');
 
       await new Promise((r) => setTimeout(r, 2000));
       return poll();
