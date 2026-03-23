@@ -27,6 +27,9 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
 app.use(cors());
 app.use(express.json());
 
+// Serve frontend files from parent directory
+app.use(express.static(path.join(__dirname, '..')));
+
 // Multer config — in-memory storage (max 100 MB)
 const upload = multer({
   storage: multer.memoryStorage(),
