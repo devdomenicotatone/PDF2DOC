@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 // --- Config ---
 const CLIENT_ID = process.env.PDF_SERVICES_CLIENT_ID;
 const CLIENT_SECRET = process.env.PDF_SERVICES_CLIENT_SECRET;
+const API_ACCESS_KEY = process.env.API_ACCESS_KEY || '';
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error('⚠️  Manca PDF_SERVICES_CLIENT_ID o PDF_SERVICES_CLIENT_SECRET nel file .env');
@@ -57,6 +58,16 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+// --- Auth Middleware ---
+function requireApiKey(req, res, next) {
+  if (!API_ACCESS_KEY) return next(); // No protection if key not set
+  const key = req.headers['x-api-key'] || req.query.key;
+  if (key !== API_ACCESS_KEY) {
+    return res.status(401).json({ error: 'Password non valida.' });
+  }
+  next();
+}
+
 // --- Routes ---
 
 /**
@@ -64,7 +75,7 @@ setInterval(() => {
  * Upload a PDF and start conversion to DOCX.
  * Body: multipart/form-data with 'pdf' file and optional 'ocr' flag
  */
-app.post('/api/convert', upload.single('pdf'), async (req, res) => {
+app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Nessun file PDF caricato.' });
@@ -209,4 +220,5 @@ app.listen(PORT, () => {
   console.log(`🚀 PDF2DOC Backend avviato su http://localhost:${PORT}`);
   console.log(`📄 Adobe Client ID: ${CLIENT_ID.substring(0, 8)}...`);
   console.log(`🔒 OCR disponibile: sì (it-IT)`);
+  console.log(`🔑 Protezione API: ${API_ACCESS_KEY ? 'ATTIVA' : 'disattiva (nessuna API_ACCESS_KEY)'}`);
 });

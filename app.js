@@ -9,8 +9,9 @@
   const CONFIG = {
     MAX_FILE_SIZE: 100 * 1024 * 1024, // 100 MB
     BACKEND_URL_KEY: 'pdf2doc_backend_url',
+    API_KEY_KEY: 'pdf2doc_api_key',
     STATS_KEY: 'pdf2doc_stats',
-    DEFAULT_BACKEND: '',
+    DEFAULT_BACKEND: 'https://pdf2doc-api.onrender.com',
   };
 
   // --- DOM References ---
@@ -37,6 +38,7 @@
   const optionsCard = $('#optionsCard');
   const settingsToggle = $('#settingsToggle');
   const settingsPanel = $('#settingsPanel');
+  const apiPasswordInput = $('#apiPassword');
   const backendUrlInput = $('#backendUrl');
   const saveSettings = $('#saveSettings');
   const statConverted = $('#statConverted');
@@ -57,6 +59,12 @@
   function loadSettings() {
     const url = localStorage.getItem(CONFIG.BACKEND_URL_KEY);
     if (url) backendUrlInput.value = url;
+    const key = localStorage.getItem(CONFIG.API_KEY_KEY);
+    if (key) apiPasswordInput.value = key;
+  }
+
+  function getApiKey() {
+    return apiPasswordInput.value.trim() || localStorage.getItem(CONFIG.API_KEY_KEY) || '';
   }
 
   function getBackendUrl() {
@@ -169,10 +177,16 @@
     // Save settings
     saveSettings.addEventListener('click', () => {
       const url = backendUrlInput.value.trim();
+      const key = apiPasswordInput.value.trim();
       if (url) {
         localStorage.setItem(CONFIG.BACKEND_URL_KEY, url);
       } else {
         localStorage.removeItem(CONFIG.BACKEND_URL_KEY);
+      }
+      if (key) {
+        localStorage.setItem(CONFIG.API_KEY_KEY, key);
+      } else {
+        localStorage.removeItem(CONFIG.API_KEY_KEY);
       }
       settingsPanel.classList.remove('settings-panel--open');
       showTemporaryButtonText(saveSettings, '✓ Salvato!', 'Salva Impostazioni');
@@ -235,13 +249,21 @@
 
       setProgress(20, 'Invio al server di conversione...');
 
+      const headers = {};
+      const apiKey = getApiKey();
+      if (apiKey) headers['x-api-key'] = apiKey;
+
       const response = await fetch(`${backendUrl}/api/convert`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          throw new Error('🔑 Password non valida. Controlla nelle Impostazioni.');
+        }
         throw new Error(errData.error || `Errore server (${response.status})`);
       }
 
