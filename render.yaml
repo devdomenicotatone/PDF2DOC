@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: pdf2doc-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PDF_SERVICES_CLIENT_ID
+        sync: false
+      - key: PDF_SERVICES_CLIENT_SECRET
+        sync: false
+      - key: NODE_ENV
+        value: production
