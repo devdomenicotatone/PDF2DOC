@@ -52,16 +52,16 @@ const upload = multer({
 // --- In-memory job store ---
 const jobs = new Map();
 
-// Cleanup old jobs every 10 minutes
+// Cleanup old jobs every 30 minutes
 setInterval(() => {
-  const maxAge = 30 * 60 * 1000; // 30 minutes
+  const maxAge = 2 * 60 * 60 * 1000; // 2 hours
   const now = Date.now();
   for (const [id, job] of jobs) {
     if (now - job.createdAt > maxAge) {
       jobs.delete(id);
     }
   }
-}, 10 * 60 * 1000);
+}, 30 * 60 * 1000);
 
 // --- Auth Middleware ---
 function requireApiKey(req, res, next) {

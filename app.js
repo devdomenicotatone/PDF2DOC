@@ -292,15 +292,7 @@
   }
 
   async function pollConversion(backendUrl, jobId) {
-    const maxAttempts = 150; // 150 × 2s = 5 min timeout
-    let attempts = 0;
-
     const poll = async () => {
-      attempts++;
-
-      if (attempts > maxAttempts) {
-        throw new Error('Timeout: la conversione ha impiegato troppo tempo.');
-      }
 
       const res = await fetch(`${backendUrl}/api/status/${jobId}`);
       const data = await res.json();
