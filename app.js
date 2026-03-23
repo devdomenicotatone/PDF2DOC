@@ -10,7 +10,7 @@
     MAX_FILE_SIZE: 100 * 1024 * 1024, // 100 MB
     BACKEND_URL_KEY: 'pdf2doc_backend_url',
     STATS_KEY: 'pdf2doc_stats',
-    DEFAULT_BACKEND: 'https://pdf2doc-api.onrender.com',
+    DEFAULT_BACKEND: '',
   };
 
   // --- DOM References ---
@@ -60,7 +60,11 @@
   }
 
   function getBackendUrl() {
-    return backendUrlInput.value.trim().replace(/\/+$/, '') || CONFIG.DEFAULT_BACKEND;
+    return localStorage.getItem(CONFIG.BACKEND_URL_KEY)?.replace(/\/+$/, '') || backendUrlInput.value.trim().replace(/\/+$/, '') || CONFIG.DEFAULT_BACKEND;
+  }
+
+  function isBackendConfigured() {
+    return !!getBackendUrl();
   }
 
   // --- Stats ---
@@ -139,6 +143,11 @@
 
     // Convert
     convertBtn.addEventListener('click', () => {
+      if (!isBackendConfigured()) {
+        showError('⚙️ Configura prima l\'URL del tuo backend nelle Impostazioni in basso.');
+        settingsPanel.classList.add('settings-panel--open');
+        return;
+      }
       if (selectedFile) startConversion();
     });
 
