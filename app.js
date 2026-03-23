@@ -10,7 +10,7 @@
     MAX_FILE_SIZE: 100 * 1024 * 1024, // 100 MB
     BACKEND_URL_KEY: 'pdf2doc_backend_url',
     STATS_KEY: 'pdf2doc_stats',
-    DEFAULT_BACKEND: 'http://localhost:3000',
+    DEFAULT_BACKEND: 'https://pdf2doc-api.onrender.com',
   };
 
   // --- DOM References ---
