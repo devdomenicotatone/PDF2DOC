@@ -273,7 +273,7 @@ function parseGeminiResponse(response) {
     const idxMatch = line.match(/^\[(\d+)\]\s*(.*)/);
     if (idxMatch) {
       if (currentIdx !== null) {
-        corrections.set(currentIdx, currentText.trim());
+        corrections.set(currentIdx, decodeHtmlEntities(currentText.trim()));
       }
       currentIdx = parseInt(idxMatch[1], 10);
       currentText = idxMatch[2];
@@ -282,7 +282,7 @@ function parseGeminiResponse(response) {
     }
   }
   if (currentIdx !== null) {
-    corrections.set(currentIdx, currentText.trim());
+    corrections.set(currentIdx, decodeHtmlEntities(currentText.trim()));
   }
 
   return corrections;
@@ -451,6 +451,20 @@ function escapeXml(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Decode HTML entities that Gemini may insert in its output.
+ * Must be called BEFORE escapeXml to avoid double-encoding.
+ */
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');   // &amp; must be LAST
 }
 
 // --- Full Pipeline ---
