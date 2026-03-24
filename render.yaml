@@ -4,6 +4,7 @@ services:
     runtime: node
     region: frankfurt
     plan: free
+    autoDeploy: true
     rootDir: server
     buildCommand: npm install
     startCommand: npm start
