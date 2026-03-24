@@ -864,19 +864,25 @@ body::before {
   align-items: center;
   justify-content: center;
   gap: var(--space-xs);
-  padding: var(--space-sm);
-  font-size: 0.75rem;
-  color: var(--text-tertiary);
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
   cursor: pointer;
-  border: none;
-  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
   font-family: inherit;
-  transition: color var(--transition-fast);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: all var(--transition-fast);
   width: 100%;
+  margin-top: var(--space-sm);
 }
 
 .settings-toggle:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .settings-panel {
