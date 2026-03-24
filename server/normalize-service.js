@@ -409,6 +409,254 @@ async function setDocxPageSize(docxBuffer, sizeKey) {
   return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
+// ============================================
+// Tier 2: Paragraph Spacing
+// ============================================
+
+const PARA_SPACING_PRESETS = {
+  'compatto':  { before: 0, after: 0 },
+  'stretto':   { before: 60, after: 60 },    // 3pt / 3pt
+  'normale':   { before: 0, after: 160 },     // 0pt / 8pt (Word default)
+  'rilassato': { before: 120, after: 200 },   // 6pt / 10pt
+  'largo':     { before: 240, after: 240 },   // 12pt / 12pt
+};
+
+/**
+ * Set paragraph spacing (before/after) for all paragraphs.
+ * Values in twips (1pt = 20 twips).
+ */
+async function setDocxParagraphSpacing(docxBuffer, spacingKey) {
+  if (!spacingKey || !PARA_SPACING_PRESETS[spacingKey]) return docxBuffer;
+
+  const sp = PARA_SPACING_PRESETS[spacingKey];
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+  let replaced = 0;
+  let added = 0;
+
+  // Update existing w:spacing before/after (preserve line/lineRule)
+  docXml = docXml.replace(
+    /<w:spacing\s([^/]*)\/?>/g,
+    (match, attrs) => {
+      replaced++;
+      const cleaned = attrs
+        .replace(/w:before="[^"]*"/g, '')
+        .replace(/w:after="[^"]*"/g, '')
+        .replace(/w:beforeAutospacing="[^"]*"/g, '')
+        .replace(/w:afterAutospacing="[^"]*"/g, '')
+        .trim();
+      return `<w:spacing w:before="${sp.before}" w:after="${sp.after}" ${cleaned}/>`;
+    }
+  );
+
+  // For paragraphs with w:pPr but no w:spacing
+  if (replaced === 0) {
+    docXml = docXml.replace(
+      /<w:pPr>([\s\S]*?)<\/w:pPr>/g,
+      (match, inner) => {
+        if (inner.includes('<w:spacing')) return match;
+        added++;
+        return `<w:pPr>${inner}<w:spacing w:before="${sp.before}" w:after="${sp.after}"/></w:pPr>`;
+      }
+    );
+  }
+
+  console.log(`↕️ Spaziatura paragrafi: ${spacingKey} (${replaced + added} paragrafi)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+// ============================================
+// Tier 2: Text Alignment
+// ============================================
+
+const TEXT_ALIGNMENT_MAP = {
+  'sinistra':    'left',
+  'centro':      'center',
+  'destra':      'right',
+  'giustificato':'both',
+};
+
+/**
+ * Set text alignment for all non-heading paragraphs.
+ */
+async function setDocxTextAlignment(docxBuffer, alignKey) {
+  if (!alignKey || !TEXT_ALIGNMENT_MAP[alignKey]) return docxBuffer;
+
+  const jcVal = TEXT_ALIGNMENT_MAP[alignKey];
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+  const HEADING_PATTERN = /(?:Heading|heading|Titolo|titolo|Title|title)/i;
+  let count = 0;
+
+  docXml = docXml.replace(
+    /<w:p[\s>][\s\S]*?<\/w:p>/g,
+    (paraXml) => {
+      // Skip headings
+      if (HEADING_PATTERN.test(paraXml)) return paraXml;
+      if (/<w:outlineLvl\s/.test(paraXml)) return paraXml;
+
+      // If has w:pPr, update/add w:jc inside it
+      if (paraXml.includes('<w:pPr>') || paraXml.includes('<w:pPr ')) {
+        if (/<w:jc\s/.test(paraXml)) {
+          count++;
+          return paraXml.replace(/<w:jc\s+w:val="[^"]*"\/?>/, `<w:jc w:val="${jcVal}"/>`);
+        } else {
+          count++;
+          return paraXml.replace(/<\/w:pPr>/, `<w:jc w:val="${jcVal}"/></w:pPr>`);
+        }
+      }
+
+      // No w:pPr — add one with jc
+      if (paraXml.includes('<w:r')) {
+        count++;
+        return paraXml.replace(/<w:r/, `<w:pPr><w:jc w:val="${jcVal}"/></w:pPr><w:r`);
+      }
+      return paraXml;
+    }
+  );
+
+  console.log(`↔️ Allineamento: ${alignKey} (${count} paragrafi)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+// ============================================
+// Tier 2: Remove Images
+// ============================================
+
+/**
+ * Remove all images from the DOCX (for a text-only version).
+ * Removes <w:drawing> and <w:pict> elements.
+ */
+async function removeDocxImages(docxBuffer) {
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+  let count = 0;
+
+  // Remove <w:drawing>...</w:drawing>
+  docXml = docXml.replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g, () => { count++; return ''; });
+
+  // Remove <w:pict>...</w:pict>
+  docXml = docXml.replace(/<w:pict>[\s\S]*?<\/w:pict>/g, () => { count++; return ''; });
+
+  // Remove empty runs left behind
+  docXml = docXml.replace(/<w:r>\s*<w:rPr>[\s\S]*?<\/w:rPr>\s*<\/w:r>/g, '');
+
+  // Remove empty paragraphs (no text, no runs)
+  docXml = docXml.replace(/<w:p[\s>][^]*?<\/w:p>/g, (para) => {
+    if (!/<w:t[\s>]/.test(para) && !/<w:r[\s>]/.test(para)) return '';
+    return para;
+  });
+
+  if (count === 0) {
+    console.log(`🖼️ Nessuna immagine trovata`);
+    return docxBuffer;
+  }
+
+  // Also remove image files from media folder
+  const mediaFiles = Object.keys(zip.files).filter(f => f.startsWith('word/media/'));
+  for (const f of mediaFiles) zip.remove(f);
+
+  console.log(`🖼️ Rimosse ${count} immagini (+ ${mediaFiles.length} file media)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+// ============================================
+// Tier 2: Page Numbers
+// ============================================
+
+/**
+ * Add page numbers to all sections.
+ * Creates/updates footer with centered page number.
+ */
+async function addDocxPageNumbers(docxBuffer, position = 'centro') {
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+
+  // Check if footer already exists
+  const existingFooter = zip.file('word/footer_pagenum.xml');
+  const footerFile = 'word/footer_pagenum.xml';
+  const rId = 'rIdPageNumFooter';
+
+  const jcVal = TEXT_ALIGNMENT_MAP[position] || 'center';
+
+  // Create footer XML with PAGE field
+  const footerXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:p>
+    <w:pPr><w:jc w:val="${jcVal}"/></w:pPr>
+    <w:r>
+      <w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>
+      <w:fldChar w:fldCharType="begin"/>
+    </w:r>
+    <w:r>
+      <w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>
+      <w:instrText xml:space="preserve"> PAGE </w:instrText>
+    </w:r>
+    <w:r>
+      <w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>
+      <w:fldChar w:fldCharType="end"/>
+    </w:r>
+  </w:p>
+</w:ftr>`;
+
+  zip.file(footerFile, footerXml);
+
+  // Add relationship in word/_rels/document.xml.rels
+  const relsFile = zip.file('word/_rels/document.xml.rels');
+  if (relsFile) {
+    let relsXml = await relsFile.async('string');
+    // Remove existing reference if present
+    relsXml = relsXml.replace(new RegExp(`<Relationship[^>]*Id="${rId}"[^>]*/>`, 'g'), '');
+    // Add new relationship before </Relationships>
+    relsXml = relsXml.replace(
+      '</Relationships>',
+      `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer_pagenum.xml"/></Relationships>`
+    );
+    zip.file('word/_rels/document.xml.rels', relsXml);
+  }
+
+  // Reference footer in all sectPr
+  docXml = docXml.replace(
+    /<w:sectPr[\s>]/g,
+    (match) => {
+      return `${match.slice(0, -1)}><w:footerReference w:type="default" r:id="${rId}"/>`;
+    }
+  );
+
+  // Ensure [Content_Types].xml includes footer content type
+  const ctFile = zip.file('[Content_Types].xml');
+  if (ctFile) {
+    let ctXml = await ctFile.async('string');
+    if (!ctXml.includes('footer_pagenum.xml')) {
+      ctXml = ctXml.replace(
+        '</Types>',
+        `<Override PartName="/word/footer_pagenum.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`
+      );
+      zip.file('[Content_Types].xml', ctXml);
+    }
+  }
+
+  console.log(`🔢 Numerazione pagine aggiunta (${position})`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 module.exports = {
   normalizeDocxFontSize,
   setDocxMargins, MARGIN_PRESETS,
@@ -416,4 +664,8 @@ module.exports = {
   setDocxFontSize,
   setDocxLineSpacing, LINE_SPACING_PRESETS,
   setDocxPageSize, PAGE_SIZE_PRESETS,
+  setDocxParagraphSpacing, PARA_SPACING_PRESETS,
+  setDocxTextAlignment, TEXT_ALIGNMENT_MAP,
+  removeDocxImages,
+  addDocxPageNumbers,
 };

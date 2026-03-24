@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const adobe = require('./adobe-service');
 const gemini = require('./gemini-service');
-const { normalizeDocxFontSize, setDocxMargins, setDocxFontFamily, setDocxFontSize, setDocxLineSpacing, setDocxPageSize } = require('./normalize-service');
+const { normalizeDocxFontSize, setDocxMargins, setDocxFontFamily, setDocxFontSize, setDocxLineSpacing, setDocxPageSize, setDocxParagraphSpacing, setDocxTextAlignment, removeDocxImages, addDocxPageNumbers } = require('./normalize-service');
 const db = require('./db');
 
 const app = express();
@@ -140,6 +140,10 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     const fontSize = req.body.fontSize ? parseFloat(req.body.fontSize) : null;
     const lineSpacing = req.body.lineSpacing || null;
     const pageSize = req.body.pageSize || null;
+    const paraSpacing = req.body.paraSpacing || null;
+    const textAlign = req.body.textAlign || null;
+    const removeImages = req.body.removeImages === 'true';
+    const pageNumbers = req.body.pageNumbers || null;
 
     // Switch Gemini model if requested
     if (geminiModel && useGemini) {
@@ -162,7 +166,7 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processConversion(jobId, req.file.buffer, useGemini, margins, { fontFamily, fontSize, lineSpacing, pageSize }).catch((err) => {
+    processConversion(jobId, req.file.buffer, useGemini, margins, { fontFamily, fontSize, lineSpacing, pageSize, paraSpacing, textAlign, removeImages, pageNumbers }).catch((err) => {
       console.error(`Job ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -273,7 +277,7 @@ app.post('/api/reprocess/:id', requireApiKey, express.json(), async (req, res) =
       return res.status(404).json({ error: 'File DOCX grezzo non trovato su disco.' });
     }
 
-    const { margins, geminiModel, useGemini, fontFamily, fontSize, lineSpacing, pageSize } = req.body;
+    const { margins, geminiModel, useGemini, fontFamily, fontSize, lineSpacing, pageSize, paraSpacing, textAlign, removeImages, pageNumbers } = req.body;
     const jobId = crypto.randomUUID();
 
     // Create job entry for progress tracking
@@ -289,7 +293,7 @@ app.post('/api/reprocess/:id', requireApiKey, express.json(), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, conv.id, { fontFamily, fontSize: fontSize ? parseFloat(fontSize) : null, lineSpacing, pageSize }).catch((err) => {
+    processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, conv.id, { fontFamily, fontSize: fontSize ? parseFloat(fontSize) : null, lineSpacing, pageSize, paraSpacing, textAlign, removeImages, pageNumbers }).catch((err) => {
       console.error(`Reprocess ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -383,6 +387,24 @@ async function processConversion(jobId, pdfBuffer, useGemini, margins, formattin
     try { docxBuffer = await setDocxPageSize(docxBuffer, formatting.pageSize); } catch (err) { console.error(`⚠️ Page size: ${err.message}`); }
   }
 
+  // Step 5.8: Apply Tier 2 formatting
+  if (formatting.paraSpacing) {
+    job.message = '↕️ Spaziatura paragrafi...';
+    try { docxBuffer = await setDocxParagraphSpacing(docxBuffer, formatting.paraSpacing); } catch (err) { console.error(`⚠️ Para spacing: ${err.message}`); }
+  }
+  if (formatting.textAlign) {
+    job.message = '↔️ Allineamento testo...';
+    try { docxBuffer = await setDocxTextAlignment(docxBuffer, formatting.textAlign); } catch (err) { console.error(`⚠️ Text align: ${err.message}`); }
+  }
+  if (formatting.removeImages) {
+    job.message = '🖼️ Rimozione immagini...';
+    try { docxBuffer = await removeDocxImages(docxBuffer); } catch (err) { console.error(`⚠️ Remove images: ${err.message}`); }
+  }
+  if (formatting.pageNumbers) {
+    job.message = '🔢 Numerazione pagine...';
+    try { docxBuffer = await addDocxPageNumbers(docxBuffer, formatting.pageNumbers); } catch (err) { console.error(`⚠️ Page numbers: ${err.message}`); }
+  }
+
   // Step 6: If Gemini correction is requested AND configured, correct text with AI
   if (useGemini && geminiReady) {
     try {
@@ -459,6 +481,24 @@ async function processReprocess(jobId, rawBuffer, margins, useGemini, geminiMode
   if (formatting.pageSize) {
     job.message = '📄 Impostazione formato pagina...';
     try { docxBuffer = await setDocxPageSize(docxBuffer, formatting.pageSize); } catch (err) { console.error(`⚠️ Page size: ${err.message}`); }
+  }
+
+  // Tier 2 formatting
+  if (formatting.paraSpacing) {
+    job.message = '↕️ Spaziatura paragrafi...';
+    try { docxBuffer = await setDocxParagraphSpacing(docxBuffer, formatting.paraSpacing); } catch (err) { console.error(`⚠️ Para spacing: ${err.message}`); }
+  }
+  if (formatting.textAlign) {
+    job.message = '↔️ Allineamento testo...';
+    try { docxBuffer = await setDocxTextAlignment(docxBuffer, formatting.textAlign); } catch (err) { console.error(`⚠️ Text align: ${err.message}`); }
+  }
+  if (formatting.removeImages) {
+    job.message = '🖼️ Rimozione immagini...';
+    try { docxBuffer = await removeDocxImages(docxBuffer); } catch (err) { console.error(`⚠️ Remove images: ${err.message}`); }
+  }
+  if (formatting.pageNumbers) {
+    job.message = '🔢 Numerazione pagine...';
+    try { docxBuffer = await addDocxPageNumbers(docxBuffer, formatting.pageNumbers); } catch (err) { console.error(`⚠️ Page numbers: ${err.message}`); }
   }
 
   // Gemini

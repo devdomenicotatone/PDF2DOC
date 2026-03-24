@@ -263,6 +263,16 @@
       if (lineSpacing) formData.append('lineSpacing', lineSpacing);
       if (pageSize) formData.append('pageSize', pageSize);
 
+      // Tier 2 formatting
+      const paraSpacing = document.getElementById('paraSpacingSelect').value;
+      const textAlign = document.getElementById('textAlignSelect').value;
+      const removeImages = document.getElementById('removeImagesToggle').checked;
+      const pageNumbers = document.getElementById('pageNumbersSelect').value;
+      if (paraSpacing) formData.append('paraSpacing', paraSpacing);
+      if (textAlign) formData.append('textAlign', textAlign);
+      if (removeImages) formData.append('removeImages', 'true');
+      if (pageNumbers) formData.append('pageNumbers', pageNumbers);
+
       setProgress(20, 'Invio al server di conversione...');
 
       const headers = {};
@@ -504,6 +514,10 @@
     const fontSize = document.getElementById('fontSizeSelect').value || undefined;
     const lineSpacing = document.getElementById('lineSpacingSelect').value || undefined;
     const pageSize = document.getElementById('pageSizeSelect').value || undefined;
+    const paraSpacing = document.getElementById('paraSpacingSelect').value || undefined;
+    const textAlign = document.getElementById('textAlignSelect').value || undefined;
+    const removeImages = document.getElementById('removeImagesToggle').checked || undefined;
+    const pageNumbers = document.getElementById('pageNumbersSelect').value || undefined;
 
     hideError();
     progressSection.classList.add('progress-section--visible');
@@ -518,7 +532,7 @@
       const resp = await fetch(`${backendUrl}/api/reprocess/${convId}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ margins, useGemini, geminiModel, fontFamily, fontSize, lineSpacing, pageSize }),
+        body: JSON.stringify({ margins, useGemini, geminiModel, fontFamily, fontSize, lineSpacing, pageSize, paraSpacing, textAlign, removeImages, pageNumbers }),
       });
 
       if (!resp.ok) {
