@@ -996,28 +996,36 @@ body::before {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: var(--space-sm) var(--space-md);
-  margin-top: var(--space-sm);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border-glass);
+  padding: 10px var(--space-md);
+  margin-top: var(--space-md);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06));
+  border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: var(--radius-md);
-  color: var(--text-secondary);
+  color: var(--text-accent);
   font-family: 'Inter', sans-serif;
-  font-size: 0.8rem;
-  font-weight: 500;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: all var(--transition-normal);
+  letter-spacing: 0.02em;
 }
 
 .toolbar-toggle:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
-  border-color: var(--border-hover);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
+  border-color: rgba(99, 102, 241, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
 }
 
 .toolbar-toggle__arrow {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   transition: transform var(--transition-normal);
+  opacity: 0.7;
+}
+
+.toolbar-toggle--open {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.08));
 }
 
 .toolbar-toggle--open .toolbar-toggle__arrow {
@@ -1028,12 +1036,15 @@ body::before {
 .toolbar-panel {
   max-height: 0;
   overflow: hidden;
-  transition: max-height var(--transition-slow), opacity var(--transition-normal);
+  transition: max-height 400ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 250ms ease,
+              margin 250ms ease;
   opacity: 0;
+  margin-top: 0;
 }
 
 .toolbar-panel--open {
-  max-height: 600px;
+  max-height: 500px;
   opacity: 1;
   margin-top: var(--space-sm);
 }
@@ -1042,14 +1053,17 @@ body::before {
 .toolbar-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-xs) var(--space-sm);
-  padding: var(--space-sm) 0;
+  gap: 10px 12px;
+  padding: var(--space-sm) var(--space-xs);
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .toolbar-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .toolbar-item--toggle {
@@ -1057,54 +1071,86 @@ body::before {
   align-items: center;
   justify-content: space-between;
   grid-column: 1 / -1;
-  padding: var(--space-xs) 0;
-  border-top: 1px solid var(--border-glass);
-  margin-top: var(--space-xs);
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 2px;
 }
 
 .toolbar-item__label {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-secondary);
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
+/* --- Toolbar Select (Dark Theme) --- */
 .toolbar-select {
   width: 100%;
-  padding: 5px 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-glass);
+  padding: 7px 24px 7px 10px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: 'Inter', sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: all var(--transition-fast);
   -webkit-appearance: none;
+  -moz-appearance: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.2'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236366f1' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 6px center;
-  padding-right: 20px;
+  background-position: right 8px center;
 }
 
-.toolbar-select:hover,
+.toolbar-select:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  background-color: rgba(255, 255, 255, 0.09);
+}
+
 .toolbar-select:focus {
   border-color: var(--accent-primary);
   outline: none;
-  background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+/* Dark dropdown options */
+.toolbar-select option {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+}
+
+.toolbar-select option:checked {
+  background-color: #6366f1;
+  color: #fff;
+}
+
+/* Also fix the main margin-select dropdowns */
+.margin-select option {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+  padding: 8px;
+}
+
+.margin-select option:checked {
+  background-color: #6366f1;
+  color: #fff;
 }
 
 /* Small toggle variant for toolbar */
 .toggle--small {
-  width: 36px;
-  height: 20px;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
 }
 
 .toggle--small .toggle__slider::before {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   left: 3px;
   bottom: 3px;
 }
