@@ -990,6 +990,130 @@ body::before {
   }
 }
 
+/* --- Toolbar Toggle Button --- */
+.toolbar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  margin-top: var(--space-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.toolbar-toggle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.toolbar-toggle__arrow {
+  font-size: 0.65rem;
+  transition: transform var(--transition-normal);
+}
+
+.toolbar-toggle--open .toolbar-toggle__arrow {
+  transform: rotate(180deg);
+}
+
+/* --- Toolbar Panel (Collapsible) --- */
+.toolbar-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height var(--transition-slow), opacity var(--transition-normal);
+  opacity: 0;
+}
+
+.toolbar-panel--open {
+  max-height: 600px;
+  opacity: 1;
+  margin-top: var(--space-sm);
+}
+
+/* --- Toolbar Grid (2 columns) --- */
+.toolbar-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xs) var(--space-sm);
+  padding: var(--space-sm) 0;
+}
+
+.toolbar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.toolbar-item--toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  grid-column: 1 / -1;
+  padding: var(--space-xs) 0;
+  border-top: 1px solid var(--border-glass);
+  margin-top: var(--space-xs);
+}
+
+.toolbar-item__label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.toolbar-select {
+  width: 100%;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  padding-right: 20px;
+}
+
+.toolbar-select:hover,
+.toolbar-select:focus {
+  border-color: var(--accent-primary);
+  outline: none;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Small toggle variant for toolbar */
+.toggle--small {
+  width: 36px;
+  height: 20px;
+}
+
+.toggle--small .toggle__slider::before {
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.toggle--small input:checked + .toggle__slider::before {
+  transform: translateX(16px);
+}
+
+
 /* --- Safe Area (iPhone Notch) --- */
 @supports (padding: env(safe-area-inset-bottom)) {
   .app {

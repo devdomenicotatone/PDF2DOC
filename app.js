@@ -190,6 +190,16 @@
       geminiModelRow.style.display = geminiToggle.checked ? '' : 'none';
       geminiHint.style.display = geminiToggle.checked ? '' : 'none';
     });
+
+    // Toolbar toggle — expand/collapse formatting options
+    const toolbarToggle = $('#toolbarToggle');
+    const toolbarPanel = $('#toolbarPanel');
+    if (toolbarToggle && toolbarPanel) {
+      toolbarToggle.addEventListener('click', () => {
+        toolbarToggle.classList.toggle('toolbar-toggle--open');
+        toolbarPanel.classList.toggle('toolbar-panel--open');
+      });
+    }
   }
 
   // --- File Handling ---

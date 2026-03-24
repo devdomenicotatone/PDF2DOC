@@ -49,6 +49,7 @@
 
     <!-- Options Card -->
     <div class="card" id="optionsCard">
+      <!-- Gemini AI - always visible -->
       <div class="option-row">
         <div class="option-label">
           <span class="option-label__title">🤖 Correzione AI (Gemini)</span>
@@ -70,168 +71,137 @@
         </select>
       </div>
       <div class="option-hint" id="geminiHint">
-        L'AI corregge errori OCR (lettere confuse, parole spezzate). I modelli Flash sono gratuiti, Pro è più preciso ma ha costi API.
+        Flash è gratuito, Pro è più preciso per testi complessi.
       </div>
 
-      <!-- Margin Selector -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">📏 Margini Pagina</span>
-          <span class="option-label__desc">Imposta i margini di tutte le pagine nel DOCX</span>
-        </div>
-        <select id="marginPreset" class="margin-select">
-          <option value="">Originali</option>
-          <option value="normali" selected>Normali (2.5 cm)</option>
-          <option value="stretti">Stretti (1.27 cm)</option>
-          <option value="medi">Medi (2.5/1.9 cm)</option>
-          <option value="larghi">Larghi (2.5/5 cm)</option>
-          <option value="custom">Personalizzati</option>
-        </select>
-      </div>
-      <div class="margin-custom" id="marginCustom">
-        <div class="margin-custom__grid">
-          <div class="margin-custom__field">
-            <label>Sup.</label>
-            <input type="number" id="marginTop" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+      <!-- Toolbar Toggle -->
+      <button class="toolbar-toggle" id="toolbarToggle" type="button">
+        <span>⚙️ Personalizza Output</span>
+        <span class="toolbar-toggle__arrow" id="toolbarArrow">▼</span>
+      </button>
+
+      <!-- Collapsible Toolbar -->
+      <div class="toolbar-panel" id="toolbarPanel">
+        <div class="toolbar-grid">
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">📏 Margini</label>
+            <select id="marginPreset" class="toolbar-select">
+              <option value="">Originali</option>
+              <option value="normali" selected>Normali</option>
+              <option value="stretti">Stretti</option>
+              <option value="medi">Medi</option>
+              <option value="larghi">Larghi</option>
+              <option value="custom">Personalizzati</option>
+            </select>
           </div>
-          <div class="margin-custom__field">
-            <label>Inf.</label>
-            <input type="number" id="marginBottom" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">🔤 Font</label>
+            <select id="fontFamilySelect" class="toolbar-select">
+              <option value="">Originale</option>
+              <option value="times">Times New Roman</option>
+              <option value="arial">Arial</option>
+              <option value="calibri">Calibri</option>
+              <option value="courier">Courier New</option>
+              <option value="georgia">Georgia</option>
+              <option value="verdana">Verdana</option>
+              <option value="garamond">Garamond</option>
+              <option value="trebuchet">Trebuchet MS</option>
+            </select>
           </div>
-          <div class="margin-custom__field">
-            <label>Sin.</label>
-            <input type="number" id="marginLeft" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">🔠 Dim. Font</label>
+            <select id="fontSizeSelect" class="toolbar-select">
+              <option value="">Originale</option>
+              <option value="10">10 pt</option>
+              <option value="11">11 pt</option>
+              <option value="12" selected>12 pt</option>
+              <option value="13">13 pt</option>
+              <option value="14">14 pt</option>
+              <option value="16">16 pt</option>
+            </select>
           </div>
-          <div class="margin-custom__field">
-            <label>Dest.</label>
-            <input type="number" id="marginRight" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">📝 Interlinea</label>
+            <select id="lineSpacingSelect" class="toolbar-select">
+              <option value="">Originale</option>
+              <option value="singola">Singola</option>
+              <option value="1.15">1.15</option>
+              <option value="1.5">1.5</option>
+              <option value="doppia">Doppia</option>
+            </select>
+          </div>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">📄 Pagina</label>
+            <select id="pageSizeSelect" class="toolbar-select">
+              <option value="">Originale</option>
+              <option value="a4" selected>A4</option>
+              <option value="letter">Letter</option>
+              <option value="legal">Legal</option>
+              <option value="a3">A3</option>
+            </select>
+          </div>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">↕️ Spaziatura</label>
+            <select id="paraSpacingSelect" class="toolbar-select">
+              <option value="">Originale</option>
+              <option value="compatto">Compatto</option>
+              <option value="stretto">Stretto</option>
+              <option value="normale">Normale</option>
+              <option value="rilassato">Rilassato</option>
+              <option value="largo">Largo</option>
+            </select>
+          </div>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">↔️ Allineamento</label>
+            <select id="textAlignSelect" class="toolbar-select">
+              <option value="">Originale</option>
+              <option value="sinistra">Sinistra</option>
+              <option value="centro">Centro</option>
+              <option value="destra">Destra</option>
+              <option value="giustificato">Giustificato</option>
+            </select>
+          </div>
+          <div class="toolbar-item">
+            <label class="toolbar-item__label">🔢 Num. Pagina</label>
+            <select id="pageNumbersSelect" class="toolbar-select">
+              <option value="">Nessuno</option>
+              <option value="sinistra">Sinistra</option>
+              <option value="centro">Centro</option>
+              <option value="destra">Destra</option>
+            </select>
+          </div>
+          <div class="toolbar-item toolbar-item--toggle">
+            <label class="toolbar-item__label">🖼️ Rimuovi Immagini</label>
+            <label class="toggle toggle--small">
+              <input type="checkbox" id="removeImagesToggle">
+              <span class="toggle__slider"></span>
+            </label>
           </div>
         </div>
-      </div>
-
-      <!-- Tier 1: Font Family -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">🔤 Font</span>
-          <span class="option-label__desc">Cambia il carattere del documento</span>
+        <div class="margin-custom" id="marginCustom">
+          <div class="margin-custom__grid">
+            <div class="margin-custom__field">
+              <label>Sup.</label>
+              <input type="number" id="marginTop" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+            </div>
+            <div class="margin-custom__field">
+              <label>Inf.</label>
+              <input type="number" id="marginBottom" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+            </div>
+            <div class="margin-custom__field">
+              <label>Sin.</label>
+              <input type="number" id="marginLeft" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+            </div>
+            <div class="margin-custom__field">
+              <label>Dest.</label>
+              <input type="number" id="marginRight" value="2.5" min="0" max="10" step="0.1"> <span>cm</span>
+            </div>
+          </div>
         </div>
-        <select id="fontFamilySelect" class="margin-select">
-          <option value="">Originale</option>
-          <option value="times">Times New Roman</option>
-          <option value="arial">Arial</option>
-          <option value="calibri">Calibri</option>
-          <option value="courier">Courier New</option>
-          <option value="georgia">Georgia</option>
-          <option value="verdana">Verdana</option>
-          <option value="garamond">Garamond</option>
-          <option value="trebuchet">Trebuchet MS</option>
-        </select>
-      </div>
-
-      <!-- Tier 1: Font Size -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">🔠 Dimensione Font</span>
-          <span class="option-label__desc">Scala il testo (mantiene proporzioni heading)</span>
-        </div>
-        <select id="fontSizeSelect" class="margin-select">
-          <option value="">Originale</option>
-          <option value="10">10 pt</option>
-          <option value="11">11 pt</option>
-          <option value="12" selected>12 pt</option>
-          <option value="13">13 pt</option>
-          <option value="14">14 pt</option>
-          <option value="16">16 pt</option>
-        </select>
-      </div>
-
-      <!-- Tier 1: Line Spacing -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">📝 Interlinea</span>
-          <span class="option-label__desc">Spaziatura tra le righe</span>
-        </div>
-        <select id="lineSpacingSelect" class="margin-select">
-          <option value="">Originale</option>
-          <option value="singola">Singola (1.0)</option>
-          <option value="1.15">1.15</option>
-          <option value="1.5">1.5</option>
-          <option value="doppia">Doppia (2.0)</option>
-        </select>
-      </div>
-
-      <!-- Tier 1: Page Size -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">📄 Formato Pagina</span>
-          <span class="option-label__desc">Dimensione della pagina</span>
-        </div>
-        <select id="pageSizeSelect" class="margin-select">
-          <option value="">Originale</option>
-          <option value="a4" selected>A4 (210 × 297 mm)</option>
-          <option value="letter">Letter (8.5 × 11 in)</option>
-          <option value="legal">Legal (8.5 × 14 in)</option>
-          <option value="a3">A3 (297 × 420 mm)</option>
-        </select>
-      </div>
-
-      <!-- Tier 2: Paragraph Spacing -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">↕️ Spaziatura Paragrafi</span>
-          <span class="option-label__desc">Spazio prima/dopo ogni paragrafo</span>
-        </div>
-        <select id="paraSpacingSelect" class="margin-select">
-          <option value="">Originale</option>
-          <option value="compatto">Compatto (0/0)</option>
-          <option value="stretto">Stretto (3/3 pt)</option>
-          <option value="normale">Normale (0/8 pt)</option>
-          <option value="rilassato">Rilassato (6/10 pt)</option>
-          <option value="largo">Largo (12/12 pt)</option>
-        </select>
-      </div>
-
-      <!-- Tier 2: Text Alignment -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">↔️ Allineamento Testo</span>
-          <span class="option-label__desc">Allineamento del corpo testo (non heading)</span>
-        </div>
-        <select id="textAlignSelect" class="margin-select">
-          <option value="">Originale</option>
-          <option value="sinistra">Sinistra</option>
-          <option value="centro">Centrato</option>
-          <option value="destra">Destra</option>
-          <option value="giustificato">Giustificato</option>
-        </select>
-      </div>
-
-      <!-- Tier 2: Remove Images -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">🖼️ Rimuovi Immagini</span>
-          <span class="option-label__desc">Versione solo testo (file più leggero)</span>
-        </div>
-        <label class="toggle" for="removeImagesToggle">
-          <input type="checkbox" id="removeImagesToggle">
-          <span class="toggle__slider"></span>
-        </label>
-      </div>
-
-      <!-- Tier 2: Page Numbers -->
-      <div class="option-row">
-        <div class="option-label">
-          <span class="option-label__title">🔢 Numeri di Pagina</span>
-          <span class="option-label__desc">Aggiunge numerazione nel footer</span>
-        </div>
-        <select id="pageNumbersSelect" class="margin-select">
-          <option value="">Nessuno</option>
-          <option value="sinistra">A sinistra</option>
-          <option value="centro">Al centro</option>
-          <option value="destra">A destra</option>
-        </select>
       </div>
     </div>
+
+
 
     <!-- Convert Button -->
     <button class="btn-convert" id="convertBtn" disabled>
