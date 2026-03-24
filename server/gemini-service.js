@@ -7,9 +7,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const JSZip = require('jszip');
 
 const AVAILABLE_MODELS = {
-  'gemini-2.5-flash':   { label: 'Gemini 2.5 Flash (Gratis)',          free: true },
-  'gemini-2.5-pro':     { label: 'Gemini 2.5 Pro (Pagamento)',         free: false },
-  'gemini-3.1-pro':     { label: 'Gemini 3.1 Pro (Pagamento)',         free: false },
+  'gemini-2.5-flash':         { label: '2.5 Flash (Gratis)',           free: true },
+  'gemini-2.5-pro':           { label: '2.5 Pro (Pagamento)',          free: false },
+  'gemini-3.1-pro-preview':   { label: '3.1 Pro Preview (Pagamento)',  free: false },
 };
 const GEMINI_MODEL_DEFAULT = 'gemini-2.5-flash';
 let currentModelName = GEMINI_MODEL_DEFAULT;
