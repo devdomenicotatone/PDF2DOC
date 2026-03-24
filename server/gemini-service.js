@@ -6,14 +6,12 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const JSZip = require('jszip');
 
-const GEMINI_MODEL_DEFAULT = 'gemini-2.0-flash';  // Free tier default
 const AVAILABLE_MODELS = {
-  'gemini-2.0-flash':       { label: 'Gemini 2.0 Flash (Gratis)',     free: true },
-  'gemini-2.0-flash-lite':  { label: 'Gemini 2.0 Flash Lite (Gratis)', free: true },
-  'gemini-2.5-flash-preview-05-20': { label: 'Gemini 2.5 Flash (Gratis)', free: true },
-  'gemini-2.5-pro-preview-05-06':   { label: 'Gemini 2.5 Pro (Pagamento)', free: false },
-  'gemini-3.1-pro-preview':         { label: 'Gemini 3.1 Pro Preview (Pagamento)', free: false },
+  'gemini-2.5-flash':   { label: 'Gemini 2.5 Flash (Gratis)',          free: true },
+  'gemini-2.5-pro':     { label: 'Gemini 2.5 Pro (Pagamento)',         free: false },
+  'gemini-3.1-pro':     { label: 'Gemini 3.1 Pro (Pagamento)',         free: false },
 };
+const GEMINI_MODEL_DEFAULT = 'gemini-2.5-flash';
 let currentModelName = GEMINI_MODEL_DEFAULT;
 const CHARS_PER_TOKEN = 3.5;          // Italian text avg (conservative)
 const MAX_TOKENS_PER_BATCH = 6000;    // ~21K chars — safe for input+output
