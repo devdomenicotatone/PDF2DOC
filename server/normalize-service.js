@@ -189,4 +189,231 @@ async function setDocxMargins(docxBuffer, margins) {
   return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
-module.exports = { normalizeDocxFontSize, setDocxMargins, MARGIN_PRESETS };
+// ============================================
+// Font Family
+// ============================================
+
+const FONT_PRESETS = {
+  'times':     'Times New Roman',
+  'arial':     'Arial',
+  'calibri':   'Calibri',
+  'courier':   'Courier New',
+  'georgia':   'Georgia',
+  'verdana':   'Verdana',
+  'garamond':  'Garamond',
+  'trebuchet': 'Trebuchet MS',
+};
+
+/**
+ * Change all fonts in the DOCX to the specified font family.
+ */
+async function setDocxFontFamily(docxBuffer, fontKey) {
+  if (!fontKey || !FONT_PRESETS[fontKey]) return docxBuffer;
+
+  const fontName = FONT_PRESETS[fontKey];
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+  let count = 0;
+
+  // Replace w:rFonts (run fonts)
+  docXml = docXml.replace(
+    /<w:rFonts\s[^/]*\/>/g,
+    () => {
+      count++;
+      return `<w:rFonts w:ascii="${fontName}" w:hAnsi="${fontName}" w:cs="${fontName}"/>`;
+    }
+  );
+
+  if (count === 0) {
+    console.log(`🔤 Nessun <w:rFonts> trovato`);
+    return docxBuffer;
+  }
+
+  console.log(`🔤 Font cambiato: ${fontName} (${count} run)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+// ============================================
+// Font Size Scaling
+// ============================================
+
+/**
+ * Scale all font sizes in the DOCX to a target body size.
+ * Preserves relative differences (headings stay proportionally bigger).
+ * @param {Buffer} docxBuffer
+ * @param {number} targetPt — target body text size in points (e.g. 11, 12)
+ */
+async function setDocxFontSize(docxBuffer, targetPt) {
+  if (!targetPt || targetPt < 6 || targetPt > 36) return docxBuffer;
+
+  const targetHalf = Math.round(targetPt * 2); // DOCX uses half-points
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+
+  // Find the current mode (most frequent size) to calculate ratio
+  const sizeRegex = /<w:sz\s+w:val="(\d+)"/g;
+  const freq = new Map();
+  let m;
+  while ((m = sizeRegex.exec(docXml)) !== null) {
+    const s = parseInt(m[1], 10);
+    freq.set(s, (freq.get(s) || 0) + 1);
+  }
+
+  if (freq.size === 0) return docxBuffer;
+
+  let modeSize = 24; // default 12pt
+  let modeCount = 0;
+  for (const [size, count] of freq) {
+    if (count > modeCount) { modeSize = size; modeCount = count; }
+  }
+
+  const ratio = targetHalf / modeSize;
+  if (Math.abs(ratio - 1) < 0.05) {
+    console.log(`🔠 Font size già a ~${targetPt}pt`);
+    return docxBuffer;
+  }
+
+  let count = 0;
+  // Scale w:sz and w:szCs
+  docXml = docXml.replace(
+    /<w:sz\s+w:val="(\d+)"/g,
+    (match, val) => {
+      const scaled = Math.round(parseInt(val, 10) * ratio);
+      const clamped = Math.max(12, Math.min(144, scaled)); // 6pt–72pt
+      count++;
+      return `<w:sz w:val="${clamped}"`;
+    }
+  );
+  docXml = docXml.replace(
+    /<w:szCs\s+w:val="(\d+)"/g,
+    (match, val) => {
+      const scaled = Math.round(parseInt(val, 10) * ratio);
+      const clamped = Math.max(12, Math.min(144, scaled));
+      return `<w:szCs w:val="${clamped}"`;
+    }
+  );
+
+  console.log(`🔠 Font-size scalato: ${modeSize / 2}pt → ${targetPt}pt (ratio ${ratio.toFixed(2)}, ${count} run)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+// ============================================
+// Line Spacing
+// ============================================
+
+// Line spacing values (in 240ths of a line)
+const LINE_SPACING_PRESETS = {
+  'singola': 240,   // 1.0
+  '1.15':    276,   // 1.15
+  '1.5':     360,   // 1.5
+  'doppia':  480,   // 2.0
+};
+
+/**
+ * Set line spacing for all paragraphs in the DOCX.
+ */
+async function setDocxLineSpacing(docxBuffer, spacingKey) {
+  if (!spacingKey || !LINE_SPACING_PRESETS[spacingKey]) return docxBuffer;
+
+  const lineVal = LINE_SPACING_PRESETS[spacingKey];
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+  let replaced = 0;
+  let added = 0;
+
+  // Replace existing w:spacing with line attribute
+  docXml = docXml.replace(
+    /<w:spacing\s([^/]*)\/?>/g,
+    (match, attrs) => {
+      replaced++;
+      // Remove existing line/lineRule, keep before/after
+      const cleaned = attrs
+        .replace(/w:line="[^"]*"/g, '')
+        .replace(/w:lineRule="[^"]*"/g, '')
+        .trim();
+      return `<w:spacing ${cleaned} w:line="${lineVal}" w:lineRule="auto"/>`;
+    }
+  );
+
+  // For paragraphs without w:spacing, add it inside w:pPr
+  if (replaced === 0) {
+    docXml = docXml.replace(
+      /<w:pPr>([\s\S]*?)<\/w:pPr>/g,
+      (match, inner) => {
+        if (inner.includes('<w:spacing')) return match;
+        added++;
+        return `<w:pPr>${inner}<w:spacing w:line="${lineVal}" w:lineRule="auto"/></w:pPr>`;
+      }
+    );
+  }
+
+  console.log(`📝 Interlinea: ${spacingKey} (${replaced + added} paragrafi)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+// ============================================
+// Page Size
+// ============================================
+
+const PAGE_SIZE_PRESETS = {
+  'a4':     { w: 11906, h: 16838 },  // 210 × 297 mm
+  'letter': { w: 12240, h: 15840 },  // 8.5 × 11 in
+  'legal':  { w: 12240, h: 20160 },  // 8.5 × 14 in
+  'a3':     { w: 16838, h: 23811 },  // 297 × 420 mm
+};
+
+/**
+ * Set page size on all sections of a DOCX.
+ */
+async function setDocxPageSize(docxBuffer, sizeKey) {
+  if (!sizeKey || !PAGE_SIZE_PRESETS[sizeKey]) return docxBuffer;
+
+  const pgSize = PAGE_SIZE_PRESETS[sizeKey];
+  const zip = await JSZip.loadAsync(docxBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) return docxBuffer;
+
+  let docXml = await docFile.async('string');
+  let count = 0;
+
+  docXml = docXml.replace(
+    /<w:pgSz\s[^/]*\/>/g,
+    (match) => {
+      count++;
+      // Preserve orientation if present
+      const orientMatch = match.match(/w:orient="([^"]*)"/);
+      const orient = orientMatch ? ` w:orient="${orientMatch[1]}"` : '';
+      return `<w:pgSz w:w="${pgSize.w}" w:h="${pgSize.h}"${orient}/>`;
+    }
+  );
+
+  if (count === 0) {
+    console.log(`📄 Nessun <w:pgSz> trovato`);
+    return docxBuffer;
+  }
+
+  console.log(`📄 Formato pagina: ${sizeKey.toUpperCase()} (${count} sezioni)`);
+  zip.file('word/document.xml', docXml);
+  return await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+module.exports = {
+  normalizeDocxFontSize,
+  setDocxMargins, MARGIN_PRESETS,
+  setDocxFontFamily, FONT_PRESETS,
+  setDocxFontSize,
+  setDocxLineSpacing, LINE_SPACING_PRESETS,
+  setDocxPageSize, PAGE_SIZE_PRESETS,
+};

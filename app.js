@@ -253,6 +253,16 @@
       const margins = getMargins();
       if (margins) formData.append('margins', JSON.stringify(margins));
 
+      // Tier 1 formatting
+      const fontFamily = document.getElementById('fontFamilySelect').value;
+      const fontSize = document.getElementById('fontSizeSelect').value;
+      const lineSpacing = document.getElementById('lineSpacingSelect').value;
+      const pageSize = document.getElementById('pageSizeSelect').value;
+      if (fontFamily) formData.append('fontFamily', fontFamily);
+      if (fontSize) formData.append('fontSize', fontSize);
+      if (lineSpacing) formData.append('lineSpacing', lineSpacing);
+      if (pageSize) formData.append('pageSize', pageSize);
+
       setProgress(20, 'Invio al server di conversione...');
 
       const headers = {};
@@ -490,6 +500,10 @@
     const margins = getMargins();
     const useGemini = geminiToggle.checked;
     const geminiModel = geminiModelSelect.value;
+    const fontFamily = document.getElementById('fontFamilySelect').value || undefined;
+    const fontSize = document.getElementById('fontSizeSelect').value || undefined;
+    const lineSpacing = document.getElementById('lineSpacingSelect').value || undefined;
+    const pageSize = document.getElementById('pageSizeSelect').value || undefined;
 
     hideError();
     progressSection.classList.add('progress-section--visible');
@@ -504,7 +518,7 @@
       const resp = await fetch(`${backendUrl}/api/reprocess/${convId}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ margins, useGemini, geminiModel }),
+        body: JSON.stringify({ margins, useGemini, geminiModel, fontFamily, fontSize, lineSpacing, pageSize }),
       });
 
       if (!resp.ok) {

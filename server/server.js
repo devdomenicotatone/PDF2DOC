@@ -11,7 +11,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const adobe = require('./adobe-service');
 const gemini = require('./gemini-service');
-const { normalizeDocxFontSize, setDocxMargins } = require('./normalize-service');
+const { normalizeDocxFontSize, setDocxMargins, setDocxFontFamily, setDocxFontSize, setDocxLineSpacing, setDocxPageSize } = require('./normalize-service');
 const db = require('./db');
 
 const app = express();
@@ -136,6 +136,10 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     try {
       if (req.body.margins) margins = JSON.parse(req.body.margins);
     } catch {}
+    const fontFamily = req.body.fontFamily || null;
+    const fontSize = req.body.fontSize ? parseFloat(req.body.fontSize) : null;
+    const lineSpacing = req.body.lineSpacing || null;
+    const pageSize = req.body.pageSize || null;
 
     // Switch Gemini model if requested
     if (geminiModel && useGemini) {
@@ -158,7 +162,7 @@ app.post('/api/convert', requireApiKey, upload.single('pdf'), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processConversion(jobId, req.file.buffer, useGemini, margins).catch((err) => {
+    processConversion(jobId, req.file.buffer, useGemini, margins, { fontFamily, fontSize, lineSpacing, pageSize }).catch((err) => {
       console.error(`Job ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -269,7 +273,7 @@ app.post('/api/reprocess/:id', requireApiKey, express.json(), async (req, res) =
       return res.status(404).json({ error: 'File DOCX grezzo non trovato su disco.' });
     }
 
-    const { margins, geminiModel, useGemini } = req.body;
+    const { margins, geminiModel, useGemini, fontFamily, fontSize, lineSpacing, pageSize } = req.body;
     const jobId = crypto.randomUUID();
 
     // Create job entry for progress tracking
@@ -285,7 +289,7 @@ app.post('/api/reprocess/:id', requireApiKey, express.json(), async (req, res) =
     res.json({ jobId, status: 'processing' });
 
     // Process in background
-    processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, conv.id).catch((err) => {
+    processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, conv.id, { fontFamily, fontSize: fontSize ? parseFloat(fontSize) : null, lineSpacing, pageSize }).catch((err) => {
       console.error(`Reprocess ${jobId} failed:`, err.message);
       const job = jobs.get(jobId);
       if (job) {
@@ -310,7 +314,7 @@ app.delete('/api/conversions/:id', requireApiKey, (req, res) => {
 });
 
 // --- Background Conversion ---
-async function processConversion(jobId, pdfBuffer, useGemini, margins) {
+async function processConversion(jobId, pdfBuffer, useGemini, margins, formatting = {}) {
   const job = jobs.get(jobId);
   if (!job) return;
 
@@ -361,6 +365,24 @@ async function processConversion(jobId, pdfBuffer, useGemini, margins) {
     }
   }
 
+  // Step 5.7: Apply Tier 1 formatting
+  if (formatting.fontFamily) {
+    job.message = '🔤 Cambio font...';
+    try { docxBuffer = await setDocxFontFamily(docxBuffer, formatting.fontFamily); } catch (err) { console.error(`⚠️ Font family: ${err.message}`); }
+  }
+  if (formatting.fontSize) {
+    job.message = '🔠 Ridimensionamento font...';
+    try { docxBuffer = await setDocxFontSize(docxBuffer, formatting.fontSize); } catch (err) { console.error(`⚠️ Font size: ${err.message}`); }
+  }
+  if (formatting.lineSpacing) {
+    job.message = '📝 Impostazione interlinea...';
+    try { docxBuffer = await setDocxLineSpacing(docxBuffer, formatting.lineSpacing); } catch (err) { console.error(`⚠️ Line spacing: ${err.message}`); }
+  }
+  if (formatting.pageSize) {
+    job.message = '📄 Impostazione formato pagina...';
+    try { docxBuffer = await setDocxPageSize(docxBuffer, formatting.pageSize); } catch (err) { console.error(`⚠️ Page size: ${err.message}`); }
+  }
+
   // Step 6: If Gemini correction is requested AND configured, correct text with AI
   if (useGemini && geminiReady) {
     try {
@@ -397,7 +419,7 @@ async function processConversion(jobId, pdfBuffer, useGemini, margins) {
 /**
  * Re-process a stored raw DOCX with new settings (no Adobe transaction)
  */
-async function processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, convId) {
+async function processReprocess(jobId, rawBuffer, margins, useGemini, geminiModel, convId, formatting = {}) {
   const job = jobs.get(jobId);
   if (!job) return;
 
@@ -419,6 +441,24 @@ async function processReprocess(jobId, rawBuffer, margins, useGemini, geminiMode
     } catch (err) {
       console.error(`⚠️ Reprocess ${jobId}: Margin setting failed: ${err.message}`);
     }
+  }
+
+  // Tier 1 formatting
+  if (formatting.fontFamily) {
+    job.message = '🔤 Cambio font...';
+    try { docxBuffer = await setDocxFontFamily(docxBuffer, formatting.fontFamily); } catch (err) { console.error(`⚠️ Font family: ${err.message}`); }
+  }
+  if (formatting.fontSize) {
+    job.message = '🔠 Ridimensionamento font...';
+    try { docxBuffer = await setDocxFontSize(docxBuffer, formatting.fontSize); } catch (err) { console.error(`⚠️ Font size: ${err.message}`); }
+  }
+  if (formatting.lineSpacing) {
+    job.message = '📝 Impostazione interlinea...';
+    try { docxBuffer = await setDocxLineSpacing(docxBuffer, formatting.lineSpacing); } catch (err) { console.error(`⚠️ Line spacing: ${err.message}`); }
+  }
+  if (formatting.pageSize) {
+    job.message = '📄 Impostazione formato pagina...';
+    try { docxBuffer = await setDocxPageSize(docxBuffer, formatting.pageSize); } catch (err) { console.error(`⚠️ Page size: ${err.message}`); }
   }
 
   // Gemini
